@@ -1,19 +1,21 @@
 # Concept Relevance Propagation and Relevance Maximization
 
-An open-source library for neural network interpretability built on [zennit](https://github.com/chr5tphr/zennit).
-**Concept Relevance Propagation (CRP)** computes conditional attributions for in latent space defined concepts that allow to
+Zennit-crp is an open-source library for neural network interpretability built on [zennit](https://github.com/chr5tphr/zennit).
 
+## **Concept Relevance Propagation (CRP)**
+computes conditional attributions for in latent space defined concepts that allow to
 - localize concepts in input space
 - compute their relative importance to the final classification output
 - and hierarchically decompose higher-level concepts into low-level concepts
 
 In addition, this repository ships with
 
-- **Relevance Maximization**
+## **Relevance Maximization**
 
 an explaining-by-example strategy for concepts that illustrates the most <em>useful</em> pattern for prediction, unlike _Activation Maximization_, which reveals patterns that lead to _strong activation_.
 
-**Activation Maximization** as reference sampling approach and class-wide statistics are also supplied for comparision.
+## **Activation Maximization**
+as reference sampling approach and class-wide statistics are also supplied for comparision.
 
 Curious? Then take a look at our [paper](https://arxiv.org/abs/2206.03208):
 
