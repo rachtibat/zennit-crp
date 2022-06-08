@@ -15,10 +15,25 @@ an explaining-by-example strategy for concepts that illustrates the most <em>use
 
 **Activation Maximization** as reference sampling approach and class-wide statistics are also supplied for comparision.
 
-Curious? Then take a look at our paper:
+Curious? Then take a look at our [paper](https://arxiv.org/abs/2206.03208):
 
 ```
-paper waiting for publication ...
+@article{achtibat2022from,
+  title = {From "Where" to "What": Towards Human-Understandable Explanations through Concept Relevance Propagation},
+  author  = {Achtibat, Reduan and
+             Dreyer, Maximilian and
+             Eisenbraun, Ilona and
+             Bosse, Sebastian and
+             Wiegand, Thomas and
+             Samek, Wojciech and
+             Lapuschkin, Sebastian},
+  journal={arXiv},
+  year = {2022},
+  volume={abs/2206.03208},
+  doi     = {10.48550/ARXIV.2206.03208},
+  url     = {https://arxiv.org/abs/2206.03208},
+}
+
 ```
 
 ## Why Concept Relevance Propagation?
