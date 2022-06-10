@@ -58,7 +58,6 @@ setup(
     classifiers=[
         'Development Status :: 1 - Planning',
         'Intended Audience :: Science/Research',
-        'License :: OSI Approved :: BSD 3-Clause Clear License',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
     ],
