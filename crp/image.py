@@ -1,5 +1,5 @@
 
-from PIL import Image, ImageOps
+from PIL import Image
 import torch
 from typing import Dict, List
 import zennit.image as zimage

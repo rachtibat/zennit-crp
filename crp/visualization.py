@@ -1,11 +1,7 @@
-from socket import IOCTL_VM_SOCKETS_GET_LOCAL_CID
-from matplotlib import table
 import torch
 import numpy as np
 import math
-from pathlib import Path
 from typing import List, Union, Dict, Tuple
-import os
 from crp.attribution import CondAttribution
 from crp.maximization import Maximization
 from crp.concepts import Concept
@@ -17,7 +13,6 @@ from crp.receptive_field import ReceptiveField
 
 from typing import Callable
 from zennit.composites import NameMapComposite, Composite
-import zennit.image as zimage
 import concurrent.futures
 
 
