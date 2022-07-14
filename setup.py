@@ -49,7 +49,7 @@ setup(
     url='https://github.com/rachtibat/zennit-crp',
     packages=find_packages(),
     install_requires=[
-        'zennit',
+        'zennit<=0.4.6',
         'torch>=1.7.0',
         'click',
     ],
