@@ -163,8 +163,10 @@ class FeatureVisualization:
         Finds input samples that maximally activate each neuron in a layer and most relevant samples
         """
         # TODO: dummy target for extra dataset
-        d_c_sorted, rel_c_sorted, rf_c_sorted = self.RelMax.analyze_layer(rel, concept, layer_name, data_indices)
+        d_c_sorted, rel_c_sorted, rf_c_sorted, argsort = self.RelMax.analyze_layer(
+            rel, concept, layer_name, data_indices)
 
+        targets = torch.take(torch.Tensor(targets).to(argsort), argsort)
         self.RelStats.analyze_layer(d_c_sorted, rel_c_sorted, rf_c_sorted, layer_name, targets)
 
     @torch.no_grad()
@@ -179,8 +181,10 @@ class FeatureVisualization:
         act = act[unique_indices]
         targets = targets[unique_indices]
 
-        d_c_sorted, act_c_sorted, rf_c_sorted = self.ActMax.analyze_layer(act, concept, layer_name, data_indices)
+        d_c_sorted, act_c_sorted, rf_c_sorted, argsort = self.ActMax.analyze_layer(
+            act, concept, layer_name, data_indices)
 
+        targets = torch.take(torch.Tensor(targets).to(argsort), argsort)
         self.ActStats.analyze_layer(d_c_sorted, act_c_sorted, rf_c_sorted, layer_name, targets)
 
     def _save_results(self, d_index=None):
