@@ -103,7 +103,7 @@ class ChannelConcept(Concept):
             rel_l = torch.sum(rel_l, dim=-1)
 
         elif max_target == "max":
-            rel_l = torch.gather(rel_l, 2, rf_neuron.unsqueeze(2)).squeeze(2)
+            rel_l = torch.gather(rel_l, -1, rf_neuron.unsqueeze(-1)).squeeze(-1)
 
         else:
             raise ValueError("<max_target> supports only 'max' or 'sum'.")
