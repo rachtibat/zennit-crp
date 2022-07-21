@@ -100,7 +100,7 @@ class ChannelConcept(Concept):
 
         # channel maximization target
         if max_target == "sum":
-            rel_l = torch.sum(rel_l, dim=-1)
+            rel_l = torch.sum(relevance.view(*relevance.shape[:2], -1), dim=-1)
 
         elif max_target == "max":
             rel_l = torch.gather(rel_l, -1, rf_neuron.unsqueeze(-1)).squeeze(-1)
