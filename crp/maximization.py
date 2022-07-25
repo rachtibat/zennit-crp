@@ -42,17 +42,17 @@ class Maximization:
 
     def analyze_layer(self, rel, concept: Concept, layer_name: str, data_indices):
 
-        d_c_sorted, rel_c_sorted, rf_c_sorted = concept.reference_sampling(
+        argsort, rel_c_sorted, rf_c_sorted = concept.reference_sampling(
             rel, layer_name, self.max_target, self.abs_norm)
         # convert batch index to dataset wide index
-        data_indices = torch.from_numpy(data_indices).to(d_c_sorted)
-        d_c_sorted = torch.take(data_indices, d_c_sorted)
+        data_indices = torch.from_numpy(data_indices).to(argsort)
+        d_c_sorted = torch.take(data_indices, argsort)
 
         SZ = self.SAMPLE_SIZE
         self.concatenate_with_results(layer_name, d_c_sorted[:SZ], rel_c_sorted[:SZ], rf_c_sorted[:SZ])
         self.sort_result_array(layer_name)
 
-        return d_c_sorted, rel_c_sorted, rf_c_sorted
+        return d_c_sorted, rel_c_sorted, rf_c_sorted, argsort
 
     def delete_result_arrays(self):
 
