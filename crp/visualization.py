@@ -131,6 +131,7 @@ class FeatureVisualization:
                 # TODO: test stack
                 data_broadcast = torch.stack(data_broadcast, dim=0)
                 sample_indices = np.array(sample_indices)
+                targets = np.array(targets)
 
             except NotImplementedError:
                 data_broadcast, targets, sample_indices = data_batch, targets_samples, samples_batch
