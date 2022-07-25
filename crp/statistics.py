@@ -34,19 +34,22 @@ class Statistics:
         # TODO: for statistics in other class: make dummy variable for extra datset instead of SDS
         # TODO: how preprocessing?
 
-    def analyze_layer(self, d_c_sorted, rel_c_sorted, rf_c_sorted, layer_name, targets):
-        t_unique = torch.unique(targets)
+    def analyze_layer(self, d_c_sorted, rel_c_sorted, rf_c_sorted, t_c_sorted, layer_name):
+        
+        t_unique = torch.unique(t_c_sorted)
 
         for t in t_unique:
-            t_indices = targets.t() == t
-            num_channels = targets.shape[1]
+            t_indices = t_c_sorted.t() == t
 
-            d_c_t = d_c_sorted.t()[t_indices].view(num_channels, -1).t()
-            rel_c_t = rel_c_sorted.t()[t_indices].view(num_channels, -1).t()
-            rf_c_t = rf_c_sorted.t()[t_indices].view(num_channels, -1).t()
+            #TODO: simplify
+            n_concepts = t_c_sorted.shape[1]
 
-            self.concatenate_with_results(layer_name, int(t), d_c_t, rel_c_t, rf_c_t)
-            self.sort_result_array(layer_name, int(t))
+            d_c_t = d_c_sorted.t()[t_indices].view(n_concepts, -1).t()
+            rel_c_t = rel_c_sorted.t()[t_indices].view(n_concepts, -1).t()
+            rf_c_t = rf_c_sorted.t()[t_indices].view(n_concepts, -1).t()
+
+            self.concatenate_with_results(layer_name, t.item(), d_c_t, rel_c_t, rf_c_t)
+            self.sort_result_array(layer_name, t.item())
 
     def delete_result_arrays(self):
 
