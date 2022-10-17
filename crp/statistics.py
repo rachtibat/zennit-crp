@@ -29,19 +29,22 @@ class Statistics:
         self.PATH = Path(path) / self.sub_folder if path else self.sub_folder
 
         self.PATH.mkdir(parents=True, exist_ok=True)
-        # TODO: what happens if rf_c_sorted is empty? In sort and save
+        # TODO: what happens if rf_c_sorted is empty? In sort and save method
         # TODO: activation in save path instead of relevance!
-        # TODO: for statistics in other class: make dummy variable for extra datset instead of SDS
-        # TODO: how preprocessing?
 
     def analyze_layer(self, d_c_sorted, rel_c_sorted, rf_c_sorted, t_c_sorted, layer_name):
         
         t_unique = torch.unique(t_c_sorted)
 
         for t in t_unique:
-            t_indices = t_c_sorted.t() == t
 
-            #TODO: simplify
+            # gather d_c, rel_c and rf_c for each target separately 
+            t_indices = t_c_sorted.t() == t
+            
+            # - each column of t_c_sorted contains the same number of same value targets
+            # - C-style arrays start indexing row-wise
+            # - we transpose, so that reshaping the flattened array, that results of [t_indices] operation,
+            #   maintains the order of elements
             n_concepts = t_c_sorted.shape[1]
 
             d_c_t = d_c_sorted.t()[t_indices].view(n_concepts, -1).t()
