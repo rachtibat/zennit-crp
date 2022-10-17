@@ -38,21 +38,23 @@ class Maximization:
         # TODO: what happens if rf_c_sorted is empty? In sort and save
         # TODO: activation in save path instead of relevance!
         # TODO: for statistics in other class: make dummy variable for extra datset instead of SDS
-        # TODO: how preprocessing?
 
-    def analyze_layer(self, rel, concept: Concept, layer_name: str, data_indices):
+    def analyze_layer(self, rel, concept: Concept, layer_name: str, data_indices, targets):
 
-        d_c_sorted, rel_c_sorted, rf_c_sorted = concept.reference_sampling(
+        b_c_sorted, rel_c_sorted, rf_c_sorted = concept.reference_sampling(
             rel, layer_name, self.max_target, self.abs_norm)
         # convert batch index to dataset wide index
-        data_indices = torch.from_numpy(data_indices).to(d_c_sorted)
-        d_c_sorted = torch.take(data_indices, d_c_sorted)
+        data_indices = torch.from_numpy(data_indices).to(b_c_sorted)
+        d_c_sorted = torch.take(data_indices, b_c_sorted)
+        # sort targets
+        targets = torch.Tensor(targets).to(b_c_sorted)
+        t_c_sorted = torch.take(targets, b_c_sorted)
 
         SZ = self.SAMPLE_SIZE
         self.concatenate_with_results(layer_name, d_c_sorted[:SZ], rel_c_sorted[:SZ], rf_c_sorted[:SZ])
         self.sort_result_array(layer_name)
 
-        return d_c_sorted, rel_c_sorted, rf_c_sorted
+        return d_c_sorted, rel_c_sorted, rf_c_sorted, t_c_sorted
 
     def delete_result_arrays(self):
 
