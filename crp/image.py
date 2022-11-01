@@ -1,5 +1,5 @@
 
-from typing import Dict, Union, Any
+from typing import Dict, List, Union, Any
 from PIL import Image
 import torch
 from torchvision.transforms.functional import gaussian_blur
@@ -94,8 +94,8 @@ def opaque_img(data_batch, heatmaps, rf=False, alpha=0.3, vis_th=0.2, crop_th=0.
     return imgs
 
 
-def imgify(image: Union[Image.Image, torch.Tensor, np.ndarray], cmap: str = "bwr", vmin=None, vmax=None, symmetric=True, resize:int=None,
-        padding=True) -> Image.Image:
+def imgify(image: Union[Image.Image, torch.Tensor, np.ndarray], cmap: str = "bwr", vmin=None, vmax=None, symmetric=True, level=1.0, grid=False, gridfill=None, resize:int=None,
+        padding=False) -> Image.Image:
     """
     Convenient wrapper around zennit.image.imgify supporting tensors, numpy arrays and PIL Images. Allows resizing while keeping the aspect
     ratio intact and padding to a square shape.
@@ -120,17 +120,17 @@ def imgify(image: Union[Image.Image, torch.Tensor, np.ndarray], cmap: str = "bwr
     image: PIL.Image object
     """
 
-    if isinstance(img, torch.Tensor):
-        img = zimage.imgify(img.detach().cpu(), cmap=cmap, vmin=vmin, vmax=vmax, symmetric=symmetric)
-    elif isinstance(img, np.ndarray):
-        img = zimage.imgify(img, cmap=cmap, vmin=vmin, vmax=vmax, symmetric=symmetric)
-    elif isinstance(img, Image.Image):
+    if isinstance(image, torch.Tensor):
+        img = zimage.imgify(image.detach().cpu(), cmap=cmap, vmin=vmin, vmax=vmax, symmetric=symmetric, level=level, grid=grid, gridfill=gridfill)
+    elif isinstance(image, np.ndarray):
+        img = zimage.imgify(image, cmap=cmap, vmin=vmin, vmax=vmax, symmetric=symmetric, level=level, grid=grid, gridfill=gridfill)
+    elif isinstance(image, Image.Image):
         img = image
     else:
         raise TypeError("Only PIL.Image, torch.Tensor or np.ndarray types are supported!")
 
     if resize:
-        ratio = max(resize)/max(img.size)
+        ratio = resize/max(img.size)
         new_size = tuple([int(x*ratio) for x in img.size])
         img = img.resize(new_size, Image.NEAREST)
 
@@ -144,7 +144,29 @@ def imgify(image: Union[Image.Image, torch.Tensor, np.ndarray], cmap: str = "bwr
     return img
 
 
-def plot_grid(ref_c: Dict[int, Any], cmap="bwr", vmin=None, vmax=None, symmetric=False, resize=224, padding=True, figsize=None) -> None:
+def plot_grid(ref_c: Dict[int, List], cmap="bwr", vmin=None, vmax=None, symmetric=False, resize=None, padding=True, figsize=None) -> None:
+    """
+    Plots lists of images or arrays inside a dictionary. To every element in the list crp.imgify is applied with its respective argument values.
+
+    Parameters:
+    ----------
+    ref_c: dict with integer keys and list values filled with torch.Tensor, np.ndarray or PIL Image
+        To every element in the list crp.imgify is applied.
+    resize: None or int
+        If None, no resizing is applied. If int, sets the maximal aspect ratio of the image.
+    padding: boolean
+        If True, pads the image into a square shape by setting the alpha channel to zero outside the image.
+    vmin: float or obj:numpy.ndarray
+        Manual minimum value of the array. Overrides the used norm's minimum value.
+    vmax: float or obj:numpy.ndarray
+        Manual maximum value of the array. Overrides the used norm's maximum value.
+    cmap: str or ColorMap
+        String to specify a built-in color map, code used to create a new color map, or a ColorMap instance, which will be used to create a palette. The color map will only be applied for arrays with only a single color channel. The color will be specified as a palette in the PIL Image.
+    
+    Returns:
+    --------
+    matplotlib.pyplot plot
+    """
 
     nrows = len(ref_c)
     ncols = len(next(iter(ref_c.values())))

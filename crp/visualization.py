@@ -19,11 +19,6 @@ from crp.image import opaque_img
 from crp.cache import Cache
 
 
-
-
- 
-
-
 class FeatureVisualization:
 
     def __init__(
@@ -53,7 +48,7 @@ class FeatureVisualization:
         else:
             return data
 
-    def get_data_sample(self, index, preprocessing=True) -> Tuple[torch.tensor, int]:
+    def get_data_sample(self, index, preprocessing=True) -> Tuple[torch.Tensor, int]:
         """
         returns a data sample from dataset at index.
 
@@ -293,7 +288,7 @@ class FeatureVisualization:
     @cache_reference
     def get_max_reference(
             self, concept_ids: Union[int,list], layer_name: str, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None,
-            rf=True, plot_fct=opaque_img, batch_size=32)-> Dict:
+            rf=False, plot_fct=opaque_img, batch_size=32)-> Dict:
         """
         Retreive reference samples for a list of concepts in a layer. Relevance and Activation Maximization
         are availble if FeatureVisualization was computed for the mode. In addition, conditional heatmaps can be computed on reference samples.
@@ -354,7 +349,7 @@ class FeatureVisualization:
 
     @cache_reference
     def get_stats_reference(self, concept_id: int, layer_name: str, targets: Union[int, list], mode="relevance", r_range: Tuple[int, int] = (0, 8),
-            composite=None, rf=True, plot_fct=opaque_img, batch_size=32):
+            composite=None, rf=False, plot_fct=opaque_img, batch_size=32):
         """
         Retreive reference samples for a single concept in a layer wrt. different explanation targets i.e. returns the reference samples
         that are computed by self.compute_stats. Relevance and Activation are availble if FeatureVisualization was computed for the statitics mode. 
