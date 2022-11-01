@@ -137,10 +137,10 @@ Project is under active development but should be stable. Please expect interfac
 
 ## Installation
 
-To install directly from PyPI using pip, use:
+To install directly from PyPI using pip, write:
 
 ```shell
-$ pip install zennit-crp
+$ pip install zennit-crp[fast_img]
 ```
 
 Alternatively, install from a manually cloned repository to try out the tutorials:
