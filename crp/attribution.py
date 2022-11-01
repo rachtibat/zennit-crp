@@ -64,9 +64,10 @@ class CondAttribution:
         torch.autograd.backward((prediction,), (output_selection.to(prediction),),
                                 retain_graph=retain_graph)
 
-    def attribution_modifier(self, data):
+    def attribution_modifier(self, data, on_device=None):
 
-        heatmap = data.grad.detach().cpu()
+        heatmap = data.grad.detach()
+        heatmap = heatmap.to(on_device) if on_device else heatmap
         return torch.sum(heatmap, dim=1)
 
     def check_arguments(self, data, conditions, start_layer):
@@ -153,11 +154,11 @@ class CondAttribution:
                 pred = modified(data)
                 self.backward_initialization(pred, y_targets, init_rel, self.MODEL_OUTPUT_NAME)
 
-            attribution = self.attribution_modifier(data)
+            attribution = self.attribution_modifier(data, on_device)
             activations, relevances = {}, {}
             if len(layer_out) > 0:
                 activations, relevances = self._collect_hook_activation_relevance(
-                    layer_out)
+                    layer_out, on_device)
             [h.remove() for h in handles]
 
         return attrResult(attribution, activations, relevances, pred)
@@ -293,7 +294,7 @@ class CondAttribution:
         ----------
             layer_out: dict
                 contains the intermediate layer outputs
-            on_device: str or None
+            on_device: str
                 copy layer_out on cpu or cuda device
             length: int
                 copy only first length elements of layer_out. Used for uneven batch sizes.

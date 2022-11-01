@@ -40,7 +40,7 @@ def get_long_description(project_path):
 
 setup(
     name='zennit-crp',
-    version='0.4.4',
+    version='0.5.0',
     description='Concept Relevance Propagation and Relevance Maximization',
     author='Reduan Achtibat',
     license='BSD 3-Clause Clear License',
@@ -51,8 +51,10 @@ setup(
     install_requires=[
         'zennit<=0.4.6',
         'torch>=1.7.0',
-        'click',
     ],
+    extras_require = {
+        'fast_img': ['Pillow-SIMD']
+    },
     python_requires='>=3.8',
 
     classifiers=[

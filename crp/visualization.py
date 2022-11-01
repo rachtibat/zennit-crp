@@ -1,26 +1,29 @@
+from typing import List, Union, Dict, Tuple, Callable
+import warnings
 import torch
 import numpy as np
 import math
-from typing import List, Union, Dict, Tuple
+from collections.abc import Iterable
+import concurrent.futures
+import functools
+import inspect
+from tqdm import tqdm
+from zennit.composites import NameMapComposite, Composite
 from crp.attribution import CondAttribution
 from crp.maximization import Maximization
-from crp.concepts import Concept
+from crp.concepts import ChannelConcept, Concept
 from crp.statistics import Statistics
 from crp.hooks import FeatVisHook
 from crp.helper import load_maximization, load_statistics, load_stat_targets
-from tqdm import tqdm
-from crp.receptive_field import ReceptiveField
-
-from typing import Callable
-from zennit.composites import NameMapComposite, Composite
-import concurrent.futures
+from crp.image import opaque_img
+from crp.cache import Cache
 
 
 class FeatureVisualization:
 
     def __init__(
             self, attribution: CondAttribution, dataset, layer_map: Dict[str, Concept], preprocess_fn: Callable=None,
-            max_target="sum", abs_norm=True, path="FeatureVisualization", device=None):
+            max_target="sum", abs_norm=True, path="FeatureVisualization", device=None, cache: Cache=None):
 
         self.dataset = dataset
         self.layer_map = layer_map
@@ -36,7 +39,7 @@ class FeatureVisualization:
         self.RelStats = Statistics("relevance", max_target, abs_norm, path)
         self.ActStats = Statistics("activation", max_target, abs_norm, path)
 
-        self.ReField = None
+        self.Cache = cache
 
     def preprocess_data(self, data):
 
@@ -45,7 +48,7 @@ class FeatureVisualization:
         else:
             return data
 
-    def get_data_sample(self, index, preprocessing=True) -> Tuple[torch.tensor, int]:
+    def get_data_sample(self, index, preprocessing=True) -> Tuple[torch.Tensor, int]:
         """
         returns a data sample from dataset at index.
 
@@ -141,6 +144,7 @@ class FeatureVisualization:
             dict_inputs["sample_indices"] = sample_indices
             dict_inputs["targets"] = targets
 
+            # composites are already registered before
             self.attribution(data_broadcast, conditions, None)
 
             if b % checkpoint == checkpoint - 1:
@@ -203,7 +207,6 @@ class FeatureVisualization:
 
         return saved_files
 
-    # TODO: write dataloader because of multi target and speed
     def get_data_concurrently(self, indices: Union[List, np.ndarray, torch.tensor], preprocessing=False):
 
         if len(indices) == 1:
@@ -227,47 +230,104 @@ class FeatureVisualization:
         data_returned = torch.cat(data_returned, dim=0)
         return data_returned, labels_returned
 
-    def add_receptive_field(self, RF: ReceptiveField):
 
-        self.ReField = RF
+    def cache_reference(func):
+        """
+        Decorator for get_max_reference and get_stats_reference. If a crp.cache object is supplied to the FeatureVisualization object,
+        reference samples are cached i.e. saved after computing a visualization with a 'plot_fct' (argument of get_max_reference) or
+        loaded from the disk if available.
+        """
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            """
+            Parameters:
+            -----------
+            overwrite: boolean
+                If set to True, already computed reference samples are computed again (overwritten).
+            """
+            
+            overwrite = kwargs.pop("overwrite", False)
+            args_f = inspect.getcallargs(func, self, *args, **kwargs)
 
+            if self.Cache is None:
+                return func(**args_f)
+
+            r_range, mode, l_name, rf, composite = args_f["r_range"], args_f["mode"], args_f["layer_name"], args_f["rf"], args_f["composite"]
+            f_name = func.__name__
+            indices = args_f["concept_ids"] if f_name == "get_max_reference" else args_f["targets"]
+
+            if overwrite:
+                not_found = {id: r_range for id in indices}
+                ref_c = {}
+            else:
+                ref_c, not_found = self.Cache.load(indices, l_name, mode, r_range, composite, rf, f_name)
+
+            if len(not_found):
+                
+                for id in not_found:
+                    
+                    args_f["r_range"] = not_found[id]
+
+                    if f_name == "get_max_reference":
+                        args_f["concept_ids"]  = id
+                        ref_c_left = func(**args_f)
+                    elif f_name == "get_stats_reference":
+                        args_f["targets"] = id
+                        ref_c_left = func(**args_f)
+                    else:
+                        raise ValueError("Only the methods 'get_max_reference' and 'get_stats_reference' can be decorated.")
+
+                    self.Cache.save(ref_c_left, l_name, mode, not_found[id], composite, rf, f_name)
+
+                    ref_c[id].extend(ref_c_left[id]) if id in ref_c else ref_c_left[id]
+
+            return ref_c
+
+        return wrapper
+
+    @cache_reference
     def get_max_reference(
-            self, concept_ids: list, layer_name: str, mode="relevance", r_range: Tuple[int, int] = (0, 8),
-            heatmap=False, composite=None, batch_size=32, rf=True):
+            self, concept_ids: Union[int,list], layer_name: str, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None,
+            rf=False, plot_fct=opaque_img, batch_size=32)-> Dict:
         """
         Retreive reference samples for a list of concepts in a layer. Relevance and Activation Maximization
-        are availble if FeatureVisualization was computed for the mode. If the ReceptiveField of the layer
-        was computed, it can be used to cut out the most representative part of the sample. In addition,
-        conditional heatmaps can be computed on reference samples.
+        are availble if FeatureVisualization was computed for the mode. In addition, conditional heatmaps can be computed on reference samples.
+        If the crp.concept class (supplied to the FeatureVisualization layer_map) implements masking for a single neuron in the 'mask_rf' method, 
+        the reference samples and heatmaps can be cropped using the receptive field of the most relevant or active neuron.
 
         Parameters:
         ----------
-            concept_ids: list
-            layer_name: str
-            mode: "relevance" or "activation"
-                Relevance or Activation Maximization 
-            r_range: Tuple(int, int)
-                Aange of N-top reference samples. For example, (3, 7) corresponds to the Top-3 to -6 samples.
-                Argument must be a closed set i.e. second element of tuple > first element.
-            heatmap: boolean
-                If True, compute conditional heatmaps on reference samples. Please make sure to supply a composite.
-            composite: zennit.composites or None
-                If `heatmap` is True, `composite` is used for the CondAttribution object.
-            batch_size: int
-                If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
-            rf: boolean
-                If True, crop samples or heatmaps with receptive field using the `weight_receptive_field` method.
+        concept_ids: int or list
+        layer_name: str
+        mode: "relevance" or "activation"
+            Relevance or Activation Maximization 
+        r_range: Tuple(int, int)
+            Aange of N-top reference samples. For example, (3, 7) corresponds to the Top-3 to -6 samples.
+            Argument must be a closed set i.e. second element of tuple > first element.
+        heatmap: boolean
+            If True, compute conditional heatmaps on reference samples. Please make sure to supply a composite.
+        composite: zennit.composites or None
+            If `heatmap` is True, `composite` is used for the CondAttribution object.
+        rf: boolean
+            If True, compute the CRP heatmap for the most relevant neuron only to restrict the conditonal heatmap
+            on the receptive field.
+        plot_fct: callable function with signature (samples: torch.Tensor, heatmaps: torch.Tensor, rf: boolean)
+            Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
+            with self.preprocess and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
+            The return value of the function should correspond to the Cache supplied to the FeatureVisualization object (if available).
+        batch_size: int
+            If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
 
         Returns:
         -------
-            ref_c: dictionary.
-                Key values correspond to channel index and values are reference samples.
-                If rf is True, reference samples are a list of torch.Tensor with different shapes. Otherwise the 
-                dictionary values are torch.Tensor with same shape.
+        ref_c: dictionary.
+            Key values correspond to channel index and values are reference samples. The values depend on the implementation of
+            the 'plot_fct'.
         """
 
         ref_c = {}
-
+        if not isinstance(concept_ids, Iterable):
+            concept_ids = [concept_ids]
         if mode == "relevance":
             d_c_sorted, _, rf_c_sorted = load_maximization(self.RelMax.PATH, layer_name)
         elif mode == "activation":
@@ -275,26 +335,96 @@ class FeatureVisualization:
         else:
             raise ValueError("`mode` must be `relevance` or `activation`")
 
+        if rf and not composite:
+            warnings.warn("The receptive field is only computed, if you fill the 'composite' argument with a zennit Composite.")
+
         for c_id in concept_ids:
 
             d_indices = d_c_sorted[r_range[0]:r_range[1], c_id]
+            n_indices = rf_c_sorted[r_range[0]:r_range[1], c_id]
 
-            if heatmap:
-                data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=True)
-                data_batch = self.attribution_on_reference(data_batch, c_id, layer_name, composite, batch_size)
-            else:
-                data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=False)
-
-            if rf and self.ReField:
-                neuron_ids = rf_c_sorted[r_range[0]:r_range[1], c_id]
-                data_batch = self.ReField.weight_receptive_field(neuron_ids, data_batch, layer_name)
-
-            ref_c[c_id] = data_batch
+            ref_c[c_id] = self._load_ref_and_attribution(d_indices, c_id, n_indices, layer_name, composite, rf, plot_fct, batch_size)
 
         return ref_c
 
-    def attribution_on_reference(self, data, concept_id: int, layer_name: str, composite, batch_size=32):
+    @cache_reference
+    def get_stats_reference(self, concept_id: int, layer_name: str, targets: Union[int, list], mode="relevance", r_range: Tuple[int, int] = (0, 8),
+            composite=None, rf=False, plot_fct=opaque_img, batch_size=32):
+        """
+        Retreive reference samples for a single concept in a layer wrt. different explanation targets i.e. returns the reference samples
+        that are computed by self.compute_stats. Relevance and Activation are availble if FeatureVisualization was computed for the statitics mode. 
+        In addition, conditional heatmaps can be computed on reference samples. If the crp.concept class (supplied to the FeatureVisualization layer_map) 
+        implements masking for a single neuron in the 'mask_rf' method, the reference samples and heatmaps can be cropped using the receptive field of 
+        the most relevant or active neuron.
+
+        Parameters:
+        ----------
+        concept_ids: int or list
+        layer_name: str
+        mode: "relevance" or "activation"
+            Relevance or Activation Maximization 
+        r_range: Tuple(int, int)
+            Aange of N-top reference samples. For example, (3, 7) corresponds to the Top-3 to -6 samples.
+            Argument must be a closed set i.e. second element of tuple > first element.
+        heatmap: boolean
+            If True, compute conditional heatmaps on reference samples. Please make sure to supply a composite.
+        composite: zennit.composites or None
+            If `heatmap` is True, `composite` is used for the CondAttribution object.
+        rf: boolean
+            If True, compute the CRP heatmap for the most relevant neuron only to restrict the conditonal heatmap
+            on the receptive field.
+        plot_fct: callable function with signature (samples: torch.Tensor, heatmaps: torch.Tensor, rf: boolean)
+            Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
+            with self.preprocess and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
+            The return value of the function should correspond to the Cache supplied to the FeatureVisualization object (if available).
+        batch_size: int
+            If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
+
+        Returns:
+        -------
+        ref_t: dictionary.
+            Key values correspond to target indices and values are reference samples. The values depend on the implementation of
+            the 'plot_fct'.
+        """
+            
         
+        ref_t = {}
+        if not isinstance(targets, Iterable):
+            targets = [targets]
+        if mode == "relevance":
+            path = self.RelStats.PATH
+        elif mode == "activation":
+            path = self.ActStats.PATH 
+        else:
+            raise ValueError("`mode` must be `relevance` or `activation`")
+        
+        if rf and not composite:
+            warnings.warn("The receptive field is only computed, if you fill the 'composite' argument with a zennit Composite.")
+
+        for t in targets:
+            
+            d_c_sorted, _, rf_c_sorted = load_statistics(path, layer_name, t)
+            d_indices = d_c_sorted[r_range[0]:r_range[1], concept_id]
+            n_indices = rf_c_sorted[r_range[0]:r_range[1], concept_id]
+
+            ref_t[t] = self._load_ref_and_attribution(d_indices, concept_id, n_indices, layer_name, composite, rf, plot_fct, batch_size)
+
+        return ref_t
+
+    def _load_ref_and_attribution(self, d_indices, c_id, n_indices, layer_name, composite, rf, plot_fct, batch_size):
+
+        data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=False)
+
+        if composite and callable(plot_fct):
+            data_p = self.preprocess_data(data_batch)
+            heatmaps = self._attribution_on_reference(data_p, c_id, layer_name, composite, rf, n_indices, batch_size)
+            return plot_fct(data_batch.detach(), heatmaps.detach(), rf)
+
+        else:
+            return data_batch.detach().cpu()
+
+    def _attribution_on_reference(self, data, concept_id: int, layer_name: str, composite, rf=False, neuron_ids: list=[], batch_size=32):
+
         n_samples = len(data)
         if n_samples > batch_size:
             batches = math.ceil(n_samples / batch_size)
@@ -302,18 +432,50 @@ class FeatureVisualization:
             batches = 1
             batch_size = n_samples
 
+        if rf and (len(neuron_ids) != n_samples):
+            raise ValueError("length of 'neuron_ids' must be equal to the length of 'data'")
+
         heatmaps = []
         for b in range(batches):
             data_batch = data[b * batch_size: (b + 1) * batch_size]
-
-            conditions = [{layer_name: [concept_id]}] 
-            attr = self.attribution(data_batch, conditions, composite, start_layer=layer_name)
+            
+            if rf:
+                neuron_ids = neuron_ids[b * batch_size: (b + 1) * batch_size]
+                conditions = [{layer_name: {concept_id: n_index}} for n_index in neuron_ids]
+                attr = self.attribution(data_batch, conditions, composite, mask_map=ChannelConcept.mask_rf, start_layer=layer_name, on_device=self.device)
+            else:
+                conditions = [{layer_name: [concept_id]}] 
+                # initialize relevance with activation before non-linearity (could be changed in a future release)
+                attr = self.attribution(data_batch, conditions, composite, start_layer=layer_name)
 
             heatmaps.append(attr.heatmap)
 
         return torch.cat(heatmaps, dim=0)
 
-    def compute_stats(self, concept_id, layer_name: str, mode="relevance", top_N=5, mean_N=10, norm=False):
+    def compute_stats(self, concept_id, layer_name: str, mode="relevance", top_N=5, mean_N=10, norm=False) -> Tuple[list, list]:
+        """
+        Computes statistics about the targets i.e. classes that are most relevant or most activating for the concept with index 'concept_id'
+        in layer 'layer_name'. Statistics must be computed before utilizing this method.
+
+        Parameters:
+        -----------
+        concept_id: int
+            Index of concept
+        layer_name: str
+        mode: str, 'relevance' or 'activation'
+        top_N: int
+            Returns the 'top_N' classes that most activate or are most relevant for the concept.
+        mean_N: int
+            Computes the importance of each target using the 'mean_N' top reference images for each target.
+        norm: boolean
+            If True, returns the mean relevance for each target normed.
+
+        Returns:
+        --------
+        sorted_t, sorted_val as tuple
+        sorted_t: list of most relevant targets
+        sorted_val: list of respective mean relevance/activation values for each target 
+        """
 
         if mode == "relevance":
             path = self.RelStats.PATH
@@ -329,44 +491,51 @@ class FeatureVisualization:
             _, rel_c_sorted, _ = load_statistics(path, layer_name, t)
             rel_target[i] = float(rel_c_sorted[:mean_N, concept_id].mean())
         
-        
         args = torch.argsort(rel_target, descending=True)[:top_N]
 
         sorted_t = targets[args]
-        sorted_rel = rel_target[args]
+        sorted_val = rel_target[args]
 
         if norm:
-            sorted_rel = sorted_rel / sorted_rel[0]
+            sorted_val = sorted_val / sorted_val[0]
         
-        return sorted_t, sorted_rel
+        return sorted_t, sorted_val
 
-    def get_stats_reference( self, concept_id: int, layer_name: str, targets: list, mode="relevance", r_range: Tuple[int, int] = (0, 8),
-            heatmap=False, composite=None, batch_size=32, rf=True):
 
-        ref_t = {}
+    def precompute_ref(self, layer_c_ind:Dict[str, List], stats=False, top_N=4, mean_N=10, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None, rf=True, plot_fct=opaque_img, batch_size=32, overwrite=True):
+        """
+        Precomputes and saves all reference samples resulting from 'self.get_ref_samples' and 'self.get_stats_reference' for concepts supplied in 'layer_c_ind'.
 
-        if mode == "relevance":
-            path = self.RelStats.PATH
-        elif mode == "activation":
-            path = self.ActStats.PATH 
-        else:
-            raise ValueError("`mode` must be `relevance` or `activation`")
+        Parameters:
+        -----------
+        layer_c_ind: dict with str keys and list values
+            Keys correspond to layer names and values to a list of all concept indices
+        stats: boolean
+            If True, precomputes reference samples of 'self.get_stats_reference'. Otherwise, only samples of 'self.get_ref_samples' are computed.
+        overwrite: boolean
+            If set to True, already computed reference samples are computed again (overwritten).
 
-        for t in targets:
+        REMAINING PARAMETERS: correspond to 'self.get_ref_samples' and 'self.get_stats_reference'
+        """
+
+
+        if self.Cache is None:
+            raise ValueError("You must supply a crp.Cache object to the 'FeatureVisualization' class to precompute reference images!")
+        
+        for l_name in layer_c_ind:
+
+            c_indices = layer_c_ind[l_name]
+            print("Layer:", l_name)
+            pbar = tqdm(total=len(c_indices), dynamic_ncols=True)
+
+            for c_id in c_indices:
+                self.get_max_reference([c_id], l_name, mode, r_range, composite, rf, plot_fct, batch_size, overwrite=overwrite)
+                
+                if stats:
+                    targets, _ = self.compute_stats(c_id, l_name, mode, top_N, mean_N)
+                    self.get_stats_reference(c_id, l_name, targets, mode, r_range, composite, rf, plot_fct, batch_size, overwrite=overwrite)
+                
+                pbar.update(1)
+
+            pbar.close()
             
-            d_c_sorted, _, rf_c_sorted = load_statistics(path, layer_name, t)
-            d_indices = d_c_sorted[r_range[0]:r_range[1], concept_id]
-
-            if heatmap:
-                data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=True)
-                data_batch = self.attribution_on_reference(data_batch, concept_id, layer_name, composite, batch_size)
-            else:
-                data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=False)
-
-            if rf and self.ReField:
-                neuron_ids = rf_c_sorted[r_range[0]:r_range[1], concept_id]
-                data_batch = self.ReField.weight_receptive_field(neuron_ids, data_batch, layer_name)
-
-            ref_t[t] = data_batch
-
-        return ref_t

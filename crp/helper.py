@@ -34,7 +34,7 @@ def get_layer_names(model: torch.nn.Module, types: List):
     return layer_names
 
 
-def abs_norm(rel: torch.Tensor):
+def abs_norm(rel: torch.Tensor, stabilize=1e-10):
     """
 
     Parameter:
@@ -43,7 +43,11 @@ def abs_norm(rel: torch.Tensor):
 
     abs_sum = torch.sum(torch.abs(rel))
 
-    return rel / abs_sum
+    return rel / (abs_sum + stabilize)
+
+def max_norm(rel, stabilize=1e-10):
+    
+    return rel / (rel.max() + stabilize)
 
 
 def get_output_shapes(model, single_sample: torch.tensor, record_layers: List[str]):
@@ -87,7 +91,7 @@ def load_maximization(path_folder, layer_name):
 
 def load_stat_targets(path_folder):
 
-    targets = np.load(Path(path_folder) / Path("targets.npy"))
+    targets = np.load(Path(path_folder) / Path("targets.npy")).astype(np.int)
 
     return targets
 

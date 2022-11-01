@@ -1,45 +1,54 @@
 import torch
 import numpy as np
-from typing import List
+from typing import List, Dict
 
 
 class Concept:
+    """
+    Abstract class that imlplements the core functionality for the attribution computation of concepts.
+    """
 
     def mask(self, batch_id, concept_ids, layer_name):
 
-        raise NotImplementedError("<Concept> class must be implemented!")
+        raise NotImplementedError("'Concept'class must be implemented!")
 
     def mask_rf(self, neuron_ids, layer_name):
 
-        raise NotImplementedError("<Concept> class must be implemented!")
+        raise NotImplementedError("'Concept'class must be implemented!")
 
     def reference_sampling(self, relevance, layer_name: str = None, max_target: str = "sum", abs_norm=True):
 
-        raise NotImplementedError("<Concept> class must be implemented!")
+        raise NotImplementedError("'Concept'class must be implemented!")
 
     def get_rf_indices(self, output_shape, layer_name):
 
-        raise NotImplementedError("<Concept> class must be implemented!")
+        raise NotImplementedError("'Concept'class must be implemented!")
 
     def attribute(self, relevance, mask=None, layer_name: str = None, abs_norm=True):
 
-        raise NotImplementedError("<Concept> class must be implemented!")
+        raise NotImplementedError("'Concept'class must be implemented!")
 
 
 class ChannelConcept(Concept):
     """
-    Conv and Linear layers
+    Concept Class for torch.nn.Conv2D and torch.nn.Linear layers
     """
 
     @staticmethod
     def mask(batch_id: int, concept_ids: List, layer_name=None):
         """
-        Modifies gradient (replaced by zennit by attribution) at first dimension with index 'batch_id'
+        Wrapper that generates a function thath modifies the gradient (replaced by zennit by attributions).
 
         Parameters:
         ----------
-        concept_ids: list of integer values / integer lists corresponding to channel indices. Batch dimension of data should
-            match length of list.
+        batch_id: int
+            Specifies the batch dimension in the torch.Tensor.
+        concept_ids: list of integer values
+            integer lists corresponding to channel indices.
+
+        Returns:
+        --------
+        callable function that modifies the gradient
         """
 
         def mask_fct(grad):
@@ -53,7 +62,23 @@ class ChannelConcept(Concept):
         return mask_fct
 
     @staticmethod
-    def mask_rf(batch_id, neuron_ids, layer_name=None):
+    def mask_rf(batch_id: int, c_n_map: Dict[int, List], layer_name=None):
+        """
+        Wrapper that generates a function that modifies the gradient (replaced by zennit by attributions) for a single neuron.
+
+        Parameters:
+        ----------
+        batch_id: int
+            Specifies the batch dimension in the torch.Tensor.
+        c_n_map: dist with int keys and list values
+            Keys correspond to channel indices and values correspond to neuron indices.
+            Neuron Indices are counted as if the 2D Channel has 1D dimension i.e. channel dimension [3, 20, 20] -> [3, 400],
+            so that neuron indices range between 0 and 399.
+
+        Returns:
+        --------
+        callable function that modifies the gradient
+        """
 
         def mask_fct(grad):
 
@@ -61,7 +86,10 @@ class ChannelConcept(Concept):
             grad = grad.view(*grad_shape[:2], -1)
 
             mask = torch.zeros_like(grad[batch_id])
-            mask[0, neuron_ids] = 1
+
+            for channel in c_n_map:
+            
+                mask[channel, c_n_map[channel]] = 1
 
             grad[batch_id] = grad[batch_id] * mask
             return grad.view(grad_shape)
@@ -106,7 +134,7 @@ class ChannelConcept(Concept):
             rel_l = torch.gather(rel_l, -1, rf_neuron.unsqueeze(-1)).squeeze(-1)
 
         else:
-            raise ValueError("<max_target> supports only 'max' or 'sum'.")
+            raise ValueError("'max_target' supports only 'max' or 'sum'.")
 
         if abs_norm:
             rel_l = rel_l / (torch.abs(rel_l).sum(-1).view(-1, 1) + 1e-10)

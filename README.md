@@ -153,11 +153,11 @@ $ pip install ./zennit-crp
 ## Documentation
 
 Still under development, but you can refer to the tutorials below.
-Docstrings are also missing in several places.
+Docstrings are also missing in some places.
 
 ## Tutorials
 
-Check out the [jupyter notebook tutorials.](https://github.com/rachtibat/zennit-crp/tree/master/tutorials)
+Check out the [jupyter notebook tutorials.](https://github.com/rachtibat/zennit-crp/tree/master/tutorials) Please start with attribution and then feature_visualization.
 
 ## Quickstart
 
@@ -223,9 +223,6 @@ plot_grid(ref_c)
 
 Coming soon...
 
-- [ ] Masking of Reference Images
-- [ ] Replacing ReceptiveField class with ad hoc computation for maximal versatility
-- [ ] Caching for Feature Visualization
 - [ ] Complete MaskHook Tutorial
 - [ ] Visualization for the Attribution Graph
 
