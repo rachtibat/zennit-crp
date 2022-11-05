@@ -223,8 +223,11 @@ plot_grid(ref_c)
 
 Coming soon...
 
+- [ ] Unit tests
+- [ ] Distributed HPC-Cluster support
 - [ ] Complete MaskHook Tutorial
 - [ ] Visualization for the Attribution Graph
+- [ ] Documentation
 
 ## Contributing
 
