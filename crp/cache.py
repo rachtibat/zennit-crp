@@ -28,7 +28,7 @@ class Cache:
 
 class ImageCache(Cache):
     """
-    Cache that saves lists or tuple lists of PIL.Image files that are values of a dictionary.
+    Cache that saves lists or tuple of lists of PIL.Image files that are values of a dictionary.
 
     Parameters:
     ----------
@@ -74,6 +74,8 @@ class ImageCache(Cache):
         composite: zennit.composites object
         rf: boolean
         func_name: str, 'get_max_reference' or 'get_stats_reference'
+        plot_name: str
+            name of plot_fct
 
         """
 

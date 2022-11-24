@@ -319,6 +319,7 @@ class FeatureVisualization:
             Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
             with self.preprocess and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
             The return value of the function should correspond to the Cache supplied to the FeatureVisualization object (if available).
+            If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
 
@@ -381,6 +382,7 @@ class FeatureVisualization:
             Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
             with self.preprocess and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
             The return value of the function should correspond to the Cache supplied to the FeatureVisualization object (if available).
+            If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
 
@@ -525,6 +527,8 @@ class FeatureVisualization:
             Keys correspond to layer names and values to a list of all concept indices
         stats: boolean
             If True, precomputes reference samples of 'self.get_stats_reference'. Otherwise, only samples of 'self.get_ref_samples' are computed.
+        plot_list: list of callable functions
+            Functions to plot and save the images. The signature should correspond to the 'plot_fct' of 'get_max_reference'.
 
         REMAINING PARAMETERS: correspond to 'self.get_ref_samples' and 'self.get_stats_reference'
         """
