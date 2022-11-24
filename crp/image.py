@@ -214,7 +214,7 @@ def imgify(image: Union[Image.Image, torch.Tensor, np.ndarray], cmap: str = "bwr
     return img
 
 
-def plot_grid(ref_c: Dict[int, Any], cmap="bwr", vmin=None, vmax=None, symmetric=False, resize=None, padding=True, figsize=(6, 6)):
+def plot_grid(ref_c: Dict[int, Any], cmap_dim=1, cmap="bwr", vmin=None, vmax=None, symmetric=True, resize=None, padding=True, figsize=(6, 6)):
     """
     Plots dictionary of reference images as they are returned of the 'get_max_reference' method. To every element in the list crp.imgify is applied with its respective argument values.
 
@@ -228,6 +228,8 @@ def plot_grid(ref_c: Dict[int, Any], cmap="bwr", vmin=None, vmax=None, symmetric
         If True, pads the image into a square shape by setting the alpha channel to zero outside the image.
     figsize: tuple or None
         Size of plt.figure
+    cmap_dim: int, 0 or 1 
+        Applies the remaining parameters to the first or second element of the tuple list, i.e. plot as heatmap
 
     REMAINING PARAMETERS: correspond to zennit.imgify
 
@@ -240,14 +242,17 @@ def plot_grid(ref_c: Dict[int, Any], cmap="bwr", vmin=None, vmax=None, symmetric
     nrows = len(keys)
     value = next(iter(ref_c.values()))
 
-    if isinstance(value, Iterable) and isinstance(value[0], Iterable):
+    if cmap_dim > 2 or cmap_dim < 1 or cmap_dim == None:
+        raise ValueError("'cmap_dim' must be 0 or 1 or None.")
+
+    if isinstance(value, Tuple) and isinstance(value[0], Iterable):
         nsubrows = len(value)
         ncols = len(value[0])
     elif isinstance(value, Iterable):
         nsubrows = 1
         ncols = len(value)
     else:
-        raise ValueError("'ref_c' dictionary must contain an iterable of torch.Tensor, np.ndarray or PIL Image.")
+        raise ValueError("'ref_c' dictionary must contain an iterable of torch.Tensor, np.ndarray or PIL Image or a tuple of thereof.")
 
     fig = plt.figure(figsize=figsize)
     outer = gridspec.GridSpec(nrows, 1, wspace=0, hspace=0.2)
@@ -264,7 +269,12 @@ def plot_grid(ref_c: Dict[int, Any], cmap="bwr", vmin=None, vmax=None, symmetric
             
             for c in range(ncols):
                 ax = plt.Subplot(fig, inner[sr, c])
-                img = imgify(img_list[c], cmap=cmap, vmin=vmin, vmax=vmax, symmetric=symmetric, resize=resize, padding=padding)
+
+                if sr == cmap_dim:
+                    img = imgify(img_list[c], cmap=cmap, vmin=vmin, vmax=vmax, symmetric=symmetric, resize=resize, padding=padding)
+                else:
+                    img = imgify(img_list[c], resize=resize, padding=padding)
+
                 ax.imshow(img)
                 ax.set_xticks([])
                 ax.set_yticks([])
