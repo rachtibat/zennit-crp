@@ -15,7 +15,7 @@ from crp.concepts import ChannelConcept, Concept
 from crp.statistics import Statistics
 from crp.hooks import FeatVisHook
 from crp.helper import load_maximization, load_statistics, load_stat_targets
-from crp.image import vis_opaque_img
+from crp.image import vis_img_heatmap, vis_opaque_img
 from crp.cache import Cache
 
 
@@ -292,7 +292,7 @@ class FeatureVisualization:
     @cache_reference
     def get_max_reference(
             self, concept_ids: Union[int,list], layer_name: str, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None,
-            rf=False, plot_fct=vis_opaque_img, batch_size=32)-> Dict:
+            rf=False, plot_fct=vis_img_heatmap, batch_size=32)-> Dict:
         """
         Retreive reference samples for a list of concepts in a layer. Relevance and Activation Maximization
         are availble if FeatureVisualization was computed for the mode. In addition, conditional heatmaps can be computed on reference samples.
@@ -353,7 +353,7 @@ class FeatureVisualization:
 
     @cache_reference
     def get_stats_reference(self, concept_id: int, layer_name: str, targets: Union[int, list], mode="relevance", r_range: Tuple[int, int] = (0, 8),
-            composite=None, rf=False, plot_fct=vis_opaque_img, batch_size=32):
+            composite=None, rf=False, plot_fct=vis_img_heatmap, batch_size=32):
         """
         Retreive reference samples for a single concept in a layer wrt. different explanation targets i.e. returns the reference samples
         that are computed by self.compute_stats. Relevance and Activation are availble if FeatureVisualization was computed for the statitics mode. 
