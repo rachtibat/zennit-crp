@@ -15,7 +15,7 @@ from crp.concepts import ChannelConcept, Concept
 from crp.statistics import Statistics
 from crp.hooks import FeatVisHook
 from crp.helper import load_maximization, load_statistics, load_stat_targets
-from crp.image import opaque_img
+from crp.image import vis_img_heatmap, vis_opaque_img
 from crp.cache import Cache
 
 
@@ -248,19 +248,23 @@ class FeatureVisualization:
             
             overwrite = kwargs.pop("overwrite", False)
             args_f = inspect.getcallargs(func, self, *args, **kwargs)
+            plot_fct = args_f["plot_fct"]
 
-            if self.Cache is None:
+            if self.Cache is None or plot_fct is None:
                 return func(**args_f)
 
             r_range, mode, l_name, rf, composite = args_f["r_range"], args_f["mode"], args_f["layer_name"], args_f["rf"], args_f["composite"]
-            f_name = func.__name__
-            indices = args_f["concept_ids"] if f_name == "get_max_reference" else args_f["targets"]
+            f_name, plot_name = func.__name__, plot_fct.__name__
+            if f_name == "get_max_reference":
+                indices = args_f["concept_ids"]
+            else:
+                indices = [f'{args_f["concept_id"]}:{i}' for i in args_f["targets"]]
 
             if overwrite:
                 not_found = {id: r_range for id in indices}
                 ref_c = {}
             else:
-                ref_c, not_found = self.Cache.load(indices, l_name, mode, r_range, composite, rf, f_name)
+                ref_c, not_found = self.Cache.load(indices, l_name, mode, r_range, composite, rf, f_name, plot_name)
 
             if len(not_found):
                 
@@ -272,14 +276,14 @@ class FeatureVisualization:
                         args_f["concept_ids"]  = id
                         ref_c_left = func(**args_f)
                     elif f_name == "get_stats_reference":
-                        args_f["targets"] = id
+                        args_f["targets"] = int(id.split(":")[-1])
                         ref_c_left = func(**args_f)
                     else:
                         raise ValueError("Only the methods 'get_max_reference' and 'get_stats_reference' can be decorated.")
 
-                    self.Cache.save(ref_c_left, l_name, mode, not_found[id], composite, rf, f_name)
+                    self.Cache.save(ref_c_left, l_name, mode, not_found[id], composite, rf, f_name, plot_name)
 
-                    ref_c[id].extend(ref_c_left[id]) if id in ref_c else ref_c_left[id]
+                    ref_c = self.Cache.extend_dict(ref_c, ref_c_left)
 
             return ref_c
 
@@ -288,7 +292,7 @@ class FeatureVisualization:
     @cache_reference
     def get_max_reference(
             self, concept_ids: Union[int,list], layer_name: str, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None,
-            rf=False, plot_fct=opaque_img, batch_size=32)-> Dict:
+            rf=False, plot_fct=vis_img_heatmap, batch_size=32)-> Dict:
         """
         Retreive reference samples for a list of concepts in a layer. Relevance and Activation Maximization
         are availble if FeatureVisualization was computed for the mode. In addition, conditional heatmaps can be computed on reference samples.
@@ -311,10 +315,11 @@ class FeatureVisualization:
         rf: boolean
             If True, compute the CRP heatmap for the most relevant neuron only to restrict the conditonal heatmap
             on the receptive field.
-        plot_fct: callable function with signature (samples: torch.Tensor, heatmaps: torch.Tensor, rf: boolean)
+        plot_fct: callable function with signature (samples: torch.Tensor, heatmaps: torch.Tensor, rf: boolean) or None
             Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
             with self.preprocess and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
             The return value of the function should correspond to the Cache supplied to the FeatureVisualization object (if available).
+            If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
 
@@ -349,7 +354,7 @@ class FeatureVisualization:
 
     @cache_reference
     def get_stats_reference(self, concept_id: int, layer_name: str, targets: Union[int, list], mode="relevance", r_range: Tuple[int, int] = (0, 8),
-            composite=None, rf=False, plot_fct=opaque_img, batch_size=32):
+            composite=None, rf=False, plot_fct=vis_img_heatmap, batch_size=32):
         """
         Retreive reference samples for a single concept in a layer wrt. different explanation targets i.e. returns the reference samples
         that are computed by self.compute_stats. Relevance and Activation are availble if FeatureVisualization was computed for the statitics mode. 
@@ -377,6 +382,7 @@ class FeatureVisualization:
             Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
             with self.preprocess and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
             The return value of the function should correspond to the Cache supplied to the FeatureVisualization object (if available).
+            If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
 
@@ -407,7 +413,7 @@ class FeatureVisualization:
             d_indices = d_c_sorted[r_range[0]:r_range[1], concept_id]
             n_indices = rf_c_sorted[r_range[0]:r_range[1], concept_id]
 
-            ref_t[t] = self._load_ref_and_attribution(d_indices, concept_id, n_indices, layer_name, composite, rf, plot_fct, batch_size)
+            ref_t[f"{concept_id}:{t}"] = self._load_ref_and_attribution(d_indices, concept_id, n_indices, layer_name, composite, rf, plot_fct, batch_size)
 
         return ref_t
 
@@ -415,10 +421,14 @@ class FeatureVisualization:
 
         data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=False)
 
-        if composite and callable(plot_fct):
+        if composite:
             data_p = self.preprocess_data(data_batch)
             heatmaps = self._attribution_on_reference(data_p, c_id, layer_name, composite, rf, n_indices, batch_size)
-            return plot_fct(data_batch.detach(), heatmaps.detach(), rf)
+
+            if callable(plot_fct):
+                return plot_fct(data_batch.detach(), heatmaps.detach(), rf)
+            else:
+                return data_batch.detach().cpu(), heatmaps.detach().cpu()
 
         else:
             return data_batch.detach().cpu()
@@ -501,8 +511,13 @@ class FeatureVisualization:
         
         return sorted_t, sorted_val
 
+    def _save_precomputed(self, s_tensor, h_tensor, index, plot_list, layer_name, mode, r_range, composite, rf, f_name):
 
-    def precompute_ref(self, layer_c_ind:Dict[str, List], stats=False, top_N=4, mean_N=10, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None, rf=True, plot_fct=opaque_img, batch_size=32, overwrite=True):
+        for plot_fct in plot_list:
+            ref = {index: plot_fct(s_tensor, h_tensor, rf)}
+            self.Cache.save(ref, layer_name, mode, r_range, composite, rf, f_name, plot_fct.__name__)
+
+    def precompute_ref(self, layer_c_ind:Dict[str, List], composite: Composite, rf=True, stats=False, top_N=4, mean_N=10, mode="relevance", r_range: Tuple[int, int] = (0, 8), plot_list=[vis_opaque_img], batch_size=32):
         """
         Precomputes and saves all reference samples resulting from 'self.get_ref_samples' and 'self.get_stats_reference' for concepts supplied in 'layer_c_ind'.
 
@@ -512,8 +527,8 @@ class FeatureVisualization:
             Keys correspond to layer names and values to a list of all concept indices
         stats: boolean
             If True, precomputes reference samples of 'self.get_stats_reference'. Otherwise, only samples of 'self.get_ref_samples' are computed.
-        overwrite: boolean
-            If set to True, already computed reference samples are computed again (overwritten).
+        plot_list: list of callable functions
+            Functions to plot and save the images. The signature should correspond to the 'plot_fct' of 'get_max_reference'.
 
         REMAINING PARAMETERS: correspond to 'self.get_ref_samples' and 'self.get_stats_reference'
         """
@@ -522,6 +537,9 @@ class FeatureVisualization:
         if self.Cache is None:
             raise ValueError("You must supply a crp.Cache object to the 'FeatureVisualization' class to precompute reference images!")
         
+        if composite is None:
+            raise ValueError("You must supply a zennit.Composite object to precompute reference images!")
+
         for l_name in layer_c_ind:
 
             c_indices = layer_c_ind[l_name]
@@ -529,13 +547,20 @@ class FeatureVisualization:
             pbar = tqdm(total=len(c_indices), dynamic_ncols=True)
 
             for c_id in c_indices:
-                self.get_max_reference([c_id], l_name, mode, r_range, composite, rf, plot_fct, batch_size, overwrite=overwrite)
-                
+
+                s_tensor, h_tensor = self.get_max_reference(c_id, l_name, mode, r_range, composite, rf, None, batch_size)[c_id]
+
+                self._save_precomputed(s_tensor, h_tensor, c_id, plot_list, l_name, mode, r_range, composite, rf, "get_max_reference")
+                                   
                 if stats:
                     targets, _ = self.compute_stats(c_id, l_name, mode, top_N, mean_N)
-                    self.get_stats_reference(c_id, l_name, targets, mode, r_range, composite, rf, plot_fct, batch_size, overwrite=overwrite)
-                
+                    for t in targets:
+                        stat_index = f"{c_id}:{t}"
+                        s_tensor, h_tensor = self.get_stats_reference(c_id, l_name, t, mode, r_range, composite, rf, None, batch_size)[stat_index]
+                        self._save_precomputed(s_tensor, h_tensor, stat_index, plot_list, l_name, mode, r_range, composite, rf, "get_stats_reference")
+
                 pbar.update(1)
 
             pbar.close()
-            
+
+       
