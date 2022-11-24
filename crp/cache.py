@@ -12,11 +12,11 @@ class Cache:
 
         self.path = Path(path)
 
-    def save(self, ref_c, layer_name, mode, r_range, composite, rf, f_name, plot_fct, **kwargs) -> None:
+    def save(self, ref_c, layer_name, mode, r_range, composite, rf, f_name, plot_name, **kwargs) -> None:
 
         raise NotImplementedError("'Cache' class must be implemented!")
      
-    def load(self, concept_ids, layer_name, mode, r_range, composite, rf, f_name, plot_fct, **kwargs) -> Tuple[Dict[int, Any],
+    def load(self, concept_ids, layer_name, mode, r_range, composite, rf, f_name, plot_name, **kwargs) -> Tuple[Dict[int, Any],
                                                                               Dict[int, Tuple[int, int]]]:
 
         raise NotImplementedError("'Cache' class must be implemented!")
@@ -75,7 +75,7 @@ class ImageCache(Cache):
         rf: boolean
         func_name: str, 'get_max_reference' or 'get_stats_reference'
         plot_name: str
-            name of plot_fct
+            name of plot_fn
 
         """
 
