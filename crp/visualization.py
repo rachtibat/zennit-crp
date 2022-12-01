@@ -447,7 +447,7 @@ class FeatureVisualization:
 
         heatmaps = []
         for b in range(batches):
-            data_batch = data[b * batch_size: (b + 1) * batch_size]
+            data_batch = data[b * batch_size: (b + 1) * batch_size].detach().requires_grad_()
             
             if rf:
                 neuron_ids = neuron_ids[b * batch_size: (b + 1) * batch_size]
@@ -456,7 +456,7 @@ class FeatureVisualization:
             else:
                 conditions = [{layer_name: [concept_id]}] 
                 # initialize relevance with activation before non-linearity (could be changed in a future release)
-                attr = self.attribution(data_batch, conditions, composite, start_layer=layer_name)
+                attr = self.attribution(data_batch, conditions, composite, start_layer=layer_name, on_device=self.device)
 
             heatmaps.append(attr.heatmap)
 

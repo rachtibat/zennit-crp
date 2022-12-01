@@ -89,6 +89,7 @@ class CondAttribution:
         data.grad = None
         data.retain_grad()
 
+    @torch.no_grad()
     def broadcast(self, data, conditions):
 
         len_data, len_cond = len(data), len(conditions)
