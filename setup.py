@@ -51,6 +51,8 @@ setup(
     install_requires=[
         'zennit<=0.4.6',
         'torch>=1.7.0',
+        'tqdm',
+        'matplotlib'
     ],
     extras_require = {
         'fast_img': ['Pillow-SIMD']
