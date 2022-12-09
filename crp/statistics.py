@@ -78,7 +78,7 @@ class Statistics:
 
     def sort_result_array(self, layer_name, target):
 
-        d_c_args = torch.flip(torch.argsort(self.rel_c_sorted[target][layer_name], dim=0), dims=(0,))
+        d_c_args = torch.argsort(self.rel_c_sorted[target][layer_name], dim=0, descending=True)
         d_c_args = d_c_args[:self.SAMPLE_SIZE, :]
 
         self.rel_c_sorted[target][layer_name] = torch.gather(self.rel_c_sorted[target][layer_name], 0, d_c_args)
