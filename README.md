@@ -1,10 +1,9 @@
-<p align="center">
-  <img src="images/crp_logo.png" width="400"/>
-</p>
 <h3 align="center">
+  <img src="images/crp_logo.png" width="400"/>
 
-An open-source library for neural network interpretability built on [zennit](https://github.com/chr5tphr/zennit) implementing CRP, Relevance and Activation Maximization.
+  An open-source library for neural network interpretability built on [zennit](https://github.com/chr5tphr/zennit) 
 
+  with Relevance and Activation Maximization.
 </h3>
 
 ## **Concept Relevance Propagation (CRP)**
