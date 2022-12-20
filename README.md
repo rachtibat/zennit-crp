@@ -1,8 +1,11 @@
 <p align="center">
   <img src="images/crp_logo.png" width="400"/>
 </p>
+<h3 align="center">
 
-Zennit-CRP is an open-source library for neural network interpretability built on [zennit](https://github.com/chr5tphr/zennit) implementing CRP, Relevance and Activation Maximization.
+An open-source library for neural network interpretability built on [zennit](https://github.com/chr5tphr/zennit) implementing CRP, Relevance and Activation Maximization.
+
+</h3>
 
 ## **Concept Relevance Propagation (CRP)**
 computes conditional attributions for in latent space defined concepts that allow to
