@@ -6,6 +6,8 @@
   with Relevance and Activation Maximization.
 </h3>
 
+[![PyPI version](https://badge.fury.io/py/zennit-crp.svg)](https://badge.fury.io/py/zennit-crp)
+
 ## **Concept Relevance Propagation (CRP)**
 computes conditional attributions for in latent space defined concepts that allow to
 - localize concepts in input space
