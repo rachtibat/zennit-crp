@@ -4,7 +4,7 @@ import torch
 from zennit.composites import EpsilonPlus
 from crp.helper import get_layer_names
 from crp.attribution import CondAttribution
-
+import pytest
 
 class SimpleModel(nn.Module):
 
@@ -28,7 +28,7 @@ class SimpleModel(nn.Module):
 
         return self.layer3(y3)
 
-class LinearCondAttribution(CondAttribution):
+class OneDimCondAttribution(CondAttribution):
 
     def attribution_modifier(self, data, on_device=None):
 
@@ -36,12 +36,15 @@ class LinearCondAttribution(CondAttribution):
         heatmap = heatmap.to(on_device) if on_device else heatmap
         return heatmap
 
-
-def test_simple_attribution():
-
+@pytest.fixture
+def simple_cond_attribution():
     model = SimpleModel()
-    
-    attribution = LinearCondAttribution(model)
+    return model, OneDimCondAttribution(model)
+
+
+def test_simple_attribution(simple_cond_attribution):
+
+    model, attribution = simple_cond_attribution
 
     inp = torch.tensor([[-1.0, 1.0]], requires_grad=True)
     conditions = [{"y": [0]}]
@@ -52,5 +55,37 @@ def test_simple_attribution():
     attr = attribution(inp, conditions, composite, layer_names)
 
     assert torch.allclose(attr.heatmap, torch.tensor([-11.0, 21.0]))
+    assert torch.allclose(attr.relevances["layer1"], torch.tensor([1.0, 4.0]))
+    assert torch.allclose(attr.relevances["layer2"], torch.tensor([5.0, 0.0]))
+
+def test_parallel_attribution(simple_cond_attribution):
+
+    model, attribution = simple_cond_attribution
+
+    inp = torch.tensor([[-1.0, 1.0]], requires_grad=True)
+    conditions = [{"y": [0], "layer1": [0], "layer2": []}]
+    composite = EpsilonPlus()
+
+    layer_names = get_layer_names(model, [nn.Linear])
+
+    attr = attribution(inp, conditions, composite, layer_names)
+
+    assert torch.allclose(attr.heatmap, torch.tensor([-1.0, 2.0]))
+    assert torch.allclose(attr.relevances["layer1"], torch.tensor([1.0, 4.0]))
+    assert torch.allclose(attr.relevances["layer2"], torch.tensor([5.0, 0.0]))
+
+def test_partial_attribution(simple_cond_attribution):
+
+    model, attribution = simple_cond_attribution
+
+    inp = torch.tensor([[-1.0, 1.0]], requires_grad=True)
+    conditions = [{"y": [0], "layer1": [0], "layer2": [0]}]
+    composite = EpsilonPlus()
+
+    layer_names = get_layer_names(model, [nn.Linear])
+
+    attr = attribution(inp, conditions, composite, layer_names)
+
+    assert torch.allclose(attr.heatmap, torch.tensor([-11.0, 17.0]))
     assert torch.allclose(attr.relevances["layer1"], torch.tensor([1.0, 4.0]))
     assert torch.allclose(attr.relevances["layer2"], torch.tensor([5.0, 0.0]))
