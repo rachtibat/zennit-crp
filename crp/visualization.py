@@ -306,18 +306,16 @@ class FeatureVisualization:
         mode: "relevance" or "activation"
             Relevance or Activation Maximization 
         r_range: Tuple(int, int)
-            Aange of N-top reference samples. For example, (3, 7) corresponds to the Top-3 to -6 samples.
+            Range of N-top reference samples. For example, (3, 7) corresponds to the Top-3 to -6 samples.
             Argument must be a closed set i.e. second element of tuple > first element.
-        heatmap: boolean
-            If True, compute conditional heatmaps on reference samples. Please make sure to supply a composite.
         composite: zennit.composites or None
-            If `heatmap` is True, `composite` is used for the CondAttribution object.
+            If set, compute conditional heatmaps on reference samples. `composite` is used for the CondAttribution object.
         rf: boolean
-            If True, compute the CRP heatmap for the most relevant neuron only to restrict the conditonal heatmap
+            If True, compute the CRP heatmap for the most relevant/most activating neuron only to restrict the conditonal heatmap
             on the receptive field.
         plot_fn: callable function with signature (samples: torch.Tensor, heatmaps: torch.Tensor, rf: boolean) or None
             Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
-            with self.preprocess and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
+            with self.preprocess_data and the final heatmaps after computation. In addition, the boolean flag 'rf' is passed to it.
             The return value of the function should correspond to the Cache supplied to the FeatureVisualization object (if available).
             If None, the raw tensors are returned.
         batch_size: int
@@ -369,14 +367,12 @@ class FeatureVisualization:
         mode: "relevance" or "activation"
             Relevance or Activation Maximization 
         r_range: Tuple(int, int)
-            Aange of N-top reference samples. For example, (3, 7) corresponds to the Top-3 to -6 samples.
+            Range of N-top reference samples. For example, (3, 7) corresponds to the Top-3 to -6 samples.
             Argument must be a closed set i.e. second element of tuple > first element.
-        heatmap: boolean
-            If True, compute conditional heatmaps on reference samples. Please make sure to supply a composite.
         composite: zennit.composites or None
-            If `heatmap` is True, `composite` is used for the CondAttribution object.
+            If set, compute conditional heatmaps on reference samples. `composite` is used for the CondAttribution object.
         rf: boolean
-            If True, compute the CRP heatmap for the most relevant neuron only to restrict the conditonal heatmap
+            If True, compute the CRP heatmap for the most relevant/most activating neuron only to restrict the conditonal heatmap
             on the receptive field.
         plot_fn: callable function with signature (samples: torch.Tensor, heatmaps: torch.Tensor, rf: boolean)
             Draws reference images. The function receives as input the samples used for computing heatmaps before preprocessing 
