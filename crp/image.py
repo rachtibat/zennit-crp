@@ -205,7 +205,7 @@ def imgify(image: Union[Image.Image, torch.Tensor, np.ndarray], cmap: str = "bwr
         img = img.resize(new_size, Image.NEAREST)
 
     if padding:
-        max_size = max(img.size)
+        max_size = resize if resize else max(img.size)
         new_im = Image.new("RGBA", (max_size, max_size))
         new_im.putalpha(0)
         new_im.paste(img, ((max_size-img.size[0])//2, (max_size-img.size[1])//2))
