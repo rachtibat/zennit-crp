@@ -6,6 +6,7 @@ from crp.helper import get_layer_names
 from crp.attribution import CondAttribution
 import pytest
 
+
 class SimpleModel(nn.Module):
 
     def __init__(self):
@@ -14,7 +15,7 @@ class SimpleModel(nn.Module):
         self.layer1 = nn.Linear(2, 2, False)
         self.layer2 = nn.Linear(2, 2, False)
         self.layer3 = nn.Linear(4, 1, False)
-        
+
         self.layer1.weight = nn.Parameter(torch.tensor([[1, 2], [0, 1]], dtype=torch.float32))
         self.layer2.weight = nn.Parameter(torch.tensor([[2, 3], [0, 0]], dtype=torch.float32))
         self.layer3.weight = nn.Parameter(torch.tensor([[1, 4, 5, 0]], dtype=torch.float32))
@@ -28,6 +29,7 @@ class SimpleModel(nn.Module):
 
         return self.layer3(y3)
 
+
 class OneDimCondAttribution(CondAttribution):
 
     def attribution_modifier(self, data, on_device=None):
@@ -35,6 +37,7 @@ class OneDimCondAttribution(CondAttribution):
         heatmap = data.grad.detach()
         heatmap = heatmap.to(on_device) if on_device else heatmap
         return heatmap
+
 
 @pytest.fixture
 def simple_cond_attribution():
@@ -58,6 +61,7 @@ def test_simple_attribution(simple_cond_attribution):
     assert torch.allclose(attr.relevances["layer1"], torch.tensor([1.0, 4.0]))
     assert torch.allclose(attr.relevances["layer2"], torch.tensor([5.0, 0.0]))
 
+
 def test_parallel_attribution(simple_cond_attribution):
 
     model, attribution = simple_cond_attribution
@@ -73,6 +77,7 @@ def test_parallel_attribution(simple_cond_attribution):
     assert torch.allclose(attr.heatmap, torch.tensor([-1.0, 2.0]))
     assert torch.allclose(attr.relevances["layer1"], torch.tensor([1.0, 4.0]))
     assert torch.allclose(attr.relevances["layer2"], torch.tensor([5.0, 0.0]))
+
 
 def test_partial_attribution(simple_cond_attribution):
 
