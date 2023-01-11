@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import List, Tuple
 from tqdm import tqdm
+import re
 
 from crp.concepts import Concept
 
@@ -111,7 +112,7 @@ class Maximization:
 
         for path in path_list:
             filename = path.split("/")[-1]
-            l_name = filename.split("_")[0]
+            l_name = re.split(r"_[0-9]+_[0-9]+_\b", filename)[0]
 
             d_c_sorted = np.load(path + "data.npy")
             rf_c_sorted = np.load(path + "rf.npy")
