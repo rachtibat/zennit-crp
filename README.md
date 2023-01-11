@@ -244,7 +244,7 @@ docstrings we use [numpydoc](https://numpydoc.readthedocs.io/en/latest/format.ht
 
 We use [`pylint`](https://pypi.org/project/pylint/) for style checks.
 
-Basic tests are implemented with pytest.
+Basic tests are implemented with [`pytest`](https://docs.pytest.org/).
 
 We are open to any improvements (:
 
