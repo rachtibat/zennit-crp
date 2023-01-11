@@ -221,7 +221,7 @@ fv = FeatureVisualization(attribution, dataset, layer_map)
 fv.run(composite, 0, len(dataset))
 
 # visualize MaxRelevance reference images for top-5 concepts
-ref_c = fv.get_max_reference(composite, concept_ids[:5], 'features.40', 'relevance')
+ref_c = fv.get_max_reference(concept_ids[:5], 'features.40', 'relevance', composite=composite)
 
 plot_grid(ref_c)
 ```
@@ -230,7 +230,6 @@ plot_grid(ref_c)
 
 Coming soon...
 
-- [ ] Unit tests
 - [ ] Distributed HPC-Cluster support
 - [ ] Complete MaskHook Tutorial
 - [ ] Visualization for the Attribution Graph
@@ -245,7 +244,7 @@ docstrings we use [numpydoc](https://numpydoc.readthedocs.io/en/latest/format.ht
 
 We use [`pylint`](https://pypi.org/project/pylint/) for style checks.
 
-Tests are still missing.
+Basic tests are implemented with pytest.
 
 We are open to any improvements (:
 
