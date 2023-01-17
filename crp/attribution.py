@@ -3,7 +3,7 @@ from zennit.core import Composite
 from crp.hooks import MaskHook
 from crp.concepts import Concept, ChannelConcept
 from crp.graph import ModelGraph
-from typing import Callable, List, Dict, Union
+from typing import Callable, List, Dict, Union, Tuple
 import torch
 import warnings
 import numpy as np
@@ -21,13 +21,40 @@ class CondAttribution:
 
         self.MODEL_OUTPUT_NAME = "y"
 
-        self.device = next(model.parameters()
-                           ).device if device is None else device
+        self.device = next(model.parameters()).device if device is None else device
         self.model = model
 
-    def backward_initialization(self, prediction, target_list, init_rel, layer_name, retain_graph=False):
-        """
+    def backward(self, pred, grad_mask, partial_backward, conditions, layer_out, data, generate=False):
 
+        layer_names = list(conditions[0].keys())
+        if self.MODEL_OUTPUT_NAME in layer_names:
+            layer_names.remove(self.MODEL_OUTPUT_NAME)
+
+        if partial_backward and len(layer_names) > 0:
+
+            wrt_tensor, grad_tensors = pred, grad_mask.to(pred)
+
+            for l_name in layer_names: 
+
+                inputs = layer_out[l_name]
+                grad = torch.autograd.grad(wrt_tensor, inputs=inputs, grad_outputs=grad_tensors, retain_graph=True)
+
+                if grad is None:
+                    raise ValueError("The layer names must be ordered according to their succession in the model if 'exclude_parallel_layer'"
+                    " flag is set to True. Please make sure to start with the last and end with the first layer in each condition dict.")
+
+                wrt_tensor, grad_tensors = layer_out[l_name], grad
+
+            torch.autograd.backward(wrt_tensor, grad_tensors, retain_graph=False)
+
+        else:
+
+            torch.autograd.backward(pred, grad_mask.to(pred), retain_graph=generate)
+
+    
+    def relevance_init(self, prediction, target_list, init_rel):
+
+        """
 
         Parameters:
         -----------
@@ -41,11 +68,8 @@ class CondAttribution:
             init_rel: torch.Tensor or None
                 used to initialize relevance instead of prediction. If None, target_list is used.
                 Please make sure to choose the right shape.
-            layer_name: str 
-                either 'y' if backward pass starts at model output, otherwise name of start_layer
-            retain_graph: boolean
-                used in generator expression to create a persistent computation backward graph
         """
+
         if callable(init_rel):
             output_selection = init_rel(prediction)
         elif isinstance(init_rel, torch.Tensor):
@@ -61,8 +85,8 @@ class CondAttribution:
                 mask[i, targets] = output_selection[i, targets]
             output_selection = mask
 
-        torch.autograd.backward((prediction,), (output_selection.to(prediction),),
-                                retain_graph=retain_graph)
+        return output_selection
+
 
     def attribution_modifier(self, data, on_device=None):
 
@@ -70,7 +94,21 @@ class CondAttribution:
         heatmap = heatmap.to(on_device) if on_device else heatmap
         return torch.sum(heatmap, dim=1)
 
-    def check_arguments(self, data, conditions, start_layer):
+    def broadcast(self, data, conditions) -> Tuple[torch.Tensor, Dict]:
+
+        len_data, len_cond = len(data), len(conditions)
+
+        if len_data == len_cond:
+            return data, conditions
+
+        if len_cond > 1:
+            data = torch.repeat_interleave(data, len_cond, dim=0)
+        if len_data > 1:
+            conditions = conditions * len_data
+
+        return data, conditions
+
+    def _check_arguments(self, data, conditions, start_layer):
 
         if not data.requires_grad:
             raise ValueError(
@@ -85,25 +123,38 @@ class CondAttribution:
                 warnings.warn(
                     f"You defined a condition for {self.MODEL_OUTPUT_NAME} that has no effect, since the <start_layer> {start_layer}"
                     " is provided where the backward pass begins. If this behavior is not wished, remove <start_layer>.")
+    
+    def _check_arguments_generator(self, data, conditions, start_layer, exclude_parallel):
 
-        data.grad = None
-        data.retain_grad()
+        self._check_arguments(data, conditions, start_layer)
 
-    def broadcast(self, data, conditions):
+        if exclude_parallel:
+            distinct_cond = set()
+            for cond in conditions:
 
-        len_data, len_cond = len(data), len(conditions)
+                if len(distinct_cond) == 0:
+                    distinct_cond.update(cond.keys())
+                
+                if distinct_cond ^ set(cond.keys()):
+                    raise ValueError("If the 'exclude_parallel' flag is set to True, each condition dict must contain the "
+                    "same layer names. (This limitation does not apply to the __call__ method)")
 
-        if len_data == len_cond:
-            return data, conditions
 
-        if len_cond > 1:
-            data = torch.repeat_interleave(data, len_cond, dim=0)
-        if len_data > 1:
-            conditions = conditions * len_data
+    def _separate_conditions(self, conditions):
 
-        return data, conditions
+        distinct_cond = dict()
+        for cond in conditions:
+            cond_set = frozenset(cond.keys())
+            
+            if cond_set in distinct_cond:
+                distinct_cond[cond_set].append(cond)
+            else:
+                distinct_cond[cond_set] = [cond]
 
-    def register_mask_fn(self, hook, mask_map, b_index, c_indices, l_name):
+        return distinct_cond
+
+
+    def _register_mask_fn(self, hook, mask_map, b_index, c_indices, l_name):
 
         if callable(mask_map):
             mask_fn = mask_map(b_index, c_indices, l_name)
@@ -118,14 +169,53 @@ class CondAttribution:
             self, data: torch.tensor, conditions: List[Dict[str, List]],
             composite: Composite = None, record_layer: List[str] = [],
             mask_map: Union[Callable, Dict[str, Callable]] = ChannelConcept.mask, start_layer: str = None, init_rel=None,
-            on_device: str = None) -> attrResult:
+            on_device: str = None, exclude_parallel_layer=True) -> attrResult:
+
+
+        self._check_arguments(data, conditions, start_layer)
+
+        if exclude_parallel_layer:
+
+            relevances, activations = {}, {}
+            heatmap, prediction = None, None
+            
+            dist_conds = self._separate_conditions(conditions)
+
+            for dist_layer in dist_conds:
+                
+                [record_layer.append(l_name) for l_name in dist_layer if l_name != self.MODEL_OUTPUT_NAME and l_name not in record_layer] 
+                conditions = dist_conds[dist_layer]
+                attr = self._single_call(data, conditions, composite, record_layer, mask_map, start_layer, init_rel, on_device, True)
+
+                for l_name in attr.relevances:
+                    if l_name not in relevances:
+                        relevances[l_name] = attr.relevances[l_name]
+                        activations[l_name] = attr.activations[l_name]
+                    else:
+                        relevances[l_name] = torch.cat([relevances[l_name], attr.relevances[l_name]], dim=0)
+                        activations[l_name] = torch.cat([activations[l_name], attr.activations[l_name]], dim=0)
+
+                if heatmap is None:
+                    heatmap = attr.heatmap
+                    prediction = attr.prediction
+                else:
+                    heatmap = torch.cat([heatmap, attr.heatmap], dim=0)
+                    prediction = torch.cat([prediction, attr.prediction], dim=0)
+            
+            return attrResult(heatmap, activations, relevances, prediction)
+        else:
+            return self._single_call(data, conditions, composite, record_layer, mask_map, start_layer, init_rel, on_device, False)
+
+
+    def _single_call(self, data: torch.tensor, conditions: List[Dict[str, List]], composite: Composite = None, record_layer: List[str] = [],
+            mask_map: Union[Callable, Dict[str, Callable]] = ChannelConcept.mask, start_layer: str = None, init_rel=None,
+            on_device: str = None, exclude_parallel=False) -> attrResult:
 
         data, conditions = self.broadcast(data, conditions)
+        data.grad = None
+        data.retain_grad()
 
-        self.check_arguments(data, conditions, start_layer)
-
-        handles, layer_out = self._append_recording_layer_hooks(
-            record_layer, start_layer)
+        handles, layer_out = self._append_recording_layer_hooks(record_layer, start_layer)
 
         hook_map, y_targets = {}, []
         for i, cond in enumerate(conditions):
@@ -135,7 +225,7 @@ class CondAttribution:
                 else:
                     if l_name not in hook_map:
                         hook_map[l_name] = MaskHook([])
-                    self.register_mask_fn(hook_map[l_name], mask_map, i, indices, l_name)
+                    self._register_mask_fn(hook_map[l_name], mask_map, i, indices, l_name)
 
         name_map = [([name], hook) for name, hook in hook_map.items()]
         mask_composite = NameMapComposite(name_map)
@@ -148,28 +238,28 @@ class CondAttribution:
             if start_layer:
                 _ = modified(data)
                 pred = layer_out[start_layer]
-                self.backward_initialization(pred, None, init_rel, start_layer)
+                grad_mask = self.relevance_init(pred, None, init_rel)
+                self.backward(pred, grad_mask, exclude_parallel, conditions, layer_out, data)
 
             else:
                 pred = modified(data)
-                self.backward_initialization(pred, y_targets, init_rel, self.MODEL_OUTPUT_NAME)
+                grad_mask = self.relevance_init(pred, y_targets, init_rel)
+                self.backward(pred, grad_mask, exclude_parallel, conditions, layer_out, data)
 
             attribution = self.attribution_modifier(data, on_device)
             activations, relevances = {}, {}
             if len(layer_out) > 0:
-                activations, relevances = self._collect_hook_activation_relevance(
-                    layer_out, on_device)
+                activations, relevances = self._collect_hook_activation_relevance(layer_out, on_device)
             [h.remove() for h in handles]
 
         return attrResult(attribution, activations, relevances, pred)
 
-    def generate(
-            self, data: torch.tensor, conditions: List[Dict[str, List]],
-            composite: Composite = None, record_layer: List[str] = [],
-            mask_map: Union[Callable, Dict[str, Callable]] = ChannelConcept.mask, start_layer: str = None, init_rel=None,
-            batch_size=10, on_device=None, verbose=True) -> attrResult:
 
-        self.check_arguments(data, conditions, start_layer)
+    def generate(self, data: torch.tensor, conditions: List[Dict[str, List]], composite: Composite = None, record_layer: List[str] = [],
+            mask_map: Union[Callable, Dict[str, Callable]] = ChannelConcept.mask, start_layer: str = None, init_rel=None,
+            batch_size=10, on_device=None, exclude_parallel_layer=True, verbose=True) -> attrResult:
+
+        self._check_arguments_generator(data, conditions, start_layer, exclude_parallel_layer)
 
         handles, layer_out = self._append_recording_layer_hooks(
             record_layer, start_layer)
@@ -221,7 +311,7 @@ class CondAttribution:
                         if l_name == self.MODEL_OUTPUT_NAME:
                             y_targets.append(indices)
                         else:
-                            self.register_mask_fn(hook_map[l_name], mask_map, i, indices, l_name)
+                            self._register_mask_fn(hook_map[l_name], mask_map, i, indices, l_name)
 
                 if b == batches-1:
                     # last batch may have len(y_targets) != batch_size. Padded part is ignored later.
@@ -256,7 +346,7 @@ class CondAttribution:
 
         return get_tensor_hook
 
-    def _append_recording_layer_hooks(self, record_l_names: List, start_layer):
+    def _append_recording_layer_hooks(self, record_l_names: list, start_layer):
 
         handles = []
         layer_out = {}
@@ -274,7 +364,6 @@ class CondAttribution:
                     "Note, that the condition set then references to the output with OUTPUT_NAME and no longer 'y'.")
 
             if name in record_l_names:
-
                 h = layer.register_forward_hook(self.generate_hook(name, layer_out))
                 handles.append(h)
                 record_l_names.remove(name)
@@ -307,7 +396,10 @@ class CondAttribution:
             activations[name] = act.to(on_device) if on_device else act
             activations[name].requires_grad = False
 
-            if layer_out[name].grad is not None:
+            if layer_out[name].grad is None:
+                rel = torch.ones_like(activations[name], requires_grad=False)[:length]
+                relevances[name] = rel.to(on_device) if on_device else rel
+            else:
                 rel = layer_out[name].grad.detach()[:length]
                 relevances[name] = rel.to(on_device) if on_device else rel
                 relevances[name].requires_grad = False
