@@ -145,7 +145,7 @@ class FeatureVisualization:
             dict_inputs["targets"] = targets
 
             # composites are already registered before
-            self.attribution(data_broadcast, conditions, None)
+            self.attribution(data_broadcast, conditions, None, exclude_parallel=False)
 
             if b % checkpoint == checkpoint - 1:
                 self._save_results((last_checkpoint, sample_indices[-1] + 1))
@@ -448,11 +448,12 @@ class FeatureVisualization:
             if rf:
                 neuron_ids = neuron_ids[b * batch_size: (b + 1) * batch_size]
                 conditions = [{layer_name: {concept_id: n_index}} for n_index in neuron_ids]
-                attr = self.attribution(data_batch, conditions, composite, mask_map=ChannelConcept.mask_rf, start_layer=layer_name, on_device=self.device)
+                attr = self.attribution(data_batch, conditions, composite, mask_map=ChannelConcept.mask_rf, start_layer=layer_name, on_device=self.device, 
+                    exclude_parallel=False)
             else:
                 conditions = [{layer_name: [concept_id]}] 
                 # initialize relevance with activation before non-linearity (could be changed in a future release)
-                attr = self.attribution(data_batch, conditions, composite, start_layer=layer_name, on_device=self.device)
+                attr = self.attribution(data_batch, conditions, composite, start_layer=layer_name, on_device=self.device, exclude_parallel=False)
 
             heatmaps.append(attr.heatmap)
 

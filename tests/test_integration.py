@@ -110,13 +110,15 @@ def test_fashion_attribution(get_fashion_model_data):
         {"y": target},
         {"y": target, "conv2": []},
         {"y": target, "conv2": [2]},
-        {"y": target, "parallel.0": []}]
-    attr = attribution(test_sample, conditions, composite, record_layer=["conv1", "conv2"], init_rel=abs)
+        {"y": target, "parallel.0": []},
+        {"y": target, "parallel.0": [], "conv2": [3, 2, 1]}
+    ]
+    attr = attribution(test_sample, conditions, composite, record_layer=["conv1", "conv2"], init_rel=abs, exclude_parallel=False)
 
     # -----------------------------------------------
     # generation of test files for documentation only:
-    # np.savez_compressed("data/heatmaps_new", heatmaps=attr.heatmap.numpy())
-    # np.savez_compressed("data/conv1_relevances_new", conv1_relevances=attr.relevances["conv1"])
+    # np.savez_compressed("tests/data/heatmaps_new", heatmaps=attr.heatmap.numpy())
+    # np.savez_compressed("tests/data/conv1_relevances_new", conv1_relevances=attr.relevances["conv1"])
     # -----------------------------------------------
 
     heatmaps = np.load("tests/data/heatmaps.npz")["heatmaps"]
@@ -124,6 +126,16 @@ def test_fashion_attribution(get_fashion_model_data):
 
     assert np.allclose(heatmaps, attr.heatmap.numpy())
     assert np.allclose(conv1_relevances, attr.relevances["conv1"].numpy())
+
+    test_sample.grad = None
+    conditions = [
+        {"y": target, "conv2": [3, 2, 1]}
+    ]
+    attr_p = attribution(test_sample, conditions, composite, record_layer=["conv1", "conv2"], init_rel=abs, exclude_parallel=True)
+    
+    assert np.allclose(heatmaps[-1], attr_p.heatmap.numpy()[-1])
+    assert np.allclose(conv1_relevances[-1], attr_p.relevances["conv1"].numpy()[-1])
+    
 
 
 def test_fashion_feature_visualization(get_fashion_model_data):
