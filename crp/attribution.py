@@ -54,7 +54,7 @@ class CondAttribution:
 
                 wrt_tensor, grad_tensors = layer_out[l_name], grad
 
-            torch.autograd.backward(wrt_tensor, grad_tensors, retain_graph=False)
+            torch.autograd.backward(wrt_tensor, grad_tensors, retain_graph=generate)
 
         else:
 
@@ -183,10 +183,8 @@ class CondAttribution:
 
             for dist_layer in dist_conds:
 
-                [record_layer.append(l_name) for l_name in dist_layer if l_name !=
-                 self.MODEL_OUTPUT_NAME and l_name not in record_layer]
                 conditions = dist_conds[dist_layer]
-                attr = self._single_call(data, conditions, composite, record_layer,
+                attr = self._attribute(data, conditions, composite, record_layer,
                                          mask_map, start_layer, init_rel, on_device, True)
 
                 for l_name in attr.relevances:
@@ -206,10 +204,10 @@ class CondAttribution:
 
             return attrResult(heatmap, activations, relevances, prediction)
         else:
-            return self._single_call(
+            return self._attribute(
                 data, conditions, composite, record_layer, mask_map, start_layer, init_rel, on_device, False)
 
-    def _single_call(
+    def _attribute(
             self, data: torch.tensor, conditions: List[Dict[str, List]],
             composite: Composite = None, record_layer: List[str] = [],
             mask_map: Union[Callable, Dict[str, Callable]] = ChannelConcept.mask, start_layer: str = None, init_rel=None,
@@ -218,8 +216,6 @@ class CondAttribution:
         data, conditions = self.broadcast(data, conditions)
 
         self._check_arguments(data, conditions, start_layer, exclude_parallel)
-
-        handles, layer_out = self._append_recording_layer_hooks(record_layer, start_layer)
 
         hook_map, y_targets, cond_l_names = {}, [], []
         for i, cond in enumerate(conditions):
@@ -232,6 +228,8 @@ class CondAttribution:
                     self._register_mask_fn(hook_map[l_name], mask_map, i, indices, l_name)
                     if l_name not in cond_l_names:
                         cond_l_names.append(l_name)
+
+        handles, layer_out = self._append_recording_layer_hooks(record_layer, start_layer, cond_l_names)
 
         name_map = [([name], hook) for name, hook in hook_map.items()]
         mask_composite = NameMapComposite(name_map)
@@ -270,20 +268,16 @@ class CondAttribution:
 
         self._check_arguments(data, conditions, start_layer, exclude_parallel)
 
-        handles, layer_out = self._append_recording_layer_hooks(
-            record_layer, start_layer)
-
         # register on all layers in layer_map an empty hook
         hook_map, cond_l_names = {}, []
         for cond in conditions:
             for l_name in cond.keys():
                 if l_name not in hook_map:
                     hook_map[l_name] = MaskHook([])
-                if l_name not in cond_l_names:
+                if l_name != self.MODEL_OUTPUT_NAME and l_name not in cond_l_names:
                     cond_l_names.append(l_name)
 
-        if start_layer in cond_l_names:
-            cond_l_names.remove(start_layer)
+        handles, layer_out = self._append_recording_layer_hooks(record_layer, start_layer, cond_l_names)
 
         name_map = [([name], hook) for name, hook in hook_map.items()]
         mask_composite = NameMapComposite(name_map)
@@ -307,6 +301,9 @@ class CondAttribution:
             if start_layer:
                 _ = modified(data_batch)
                 pred = layer_out[start_layer]
+                if start_layer in cond_l_names:
+                    cond_l_names.remove(start_layer)
+
             else:
                 pred = modified(data_batch)
 
@@ -361,11 +358,19 @@ class CondAttribution:
 
         return get_tensor_hook
 
-    def _append_recording_layer_hooks(self, record_l_names: list, start_layer):
+    def _append_recording_layer_hooks(self, record_l_names: list, start_layer, cond_l_names):
+        """
+        applies a forward hook to all layers in record_l_names, start_layer and cond_l_names to record 
+        the activations and relevances
+        """
 
         handles = []
         layer_out = {}
         record_l_names = record_l_names.copy()
+
+        for l_name in cond_l_names:
+            if l_name not in record_l_names:
+                record_l_names.append(l_name)
 
         if start_layer is not None and start_layer not in record_l_names:
             record_l_names.append(start_layer)
