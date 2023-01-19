@@ -127,6 +127,8 @@ def test_fashion_attribution(get_fashion_model_data):
     assert np.allclose(heatmaps, attr.heatmap.numpy())
     assert np.allclose(conv1_relevances, attr.relevances["conv1"].numpy())
 
+    ### ----------------------- exclude parallel ---------------------------
+
     test_sample.grad = None
     conditions = [
         {"y": target, "conv2": [3, 2, 1]}
@@ -148,16 +150,40 @@ def test_fashion_generator_attribution(get_fashion_model_data):
     test_sample = test_sample.unsqueeze(0).requires_grad_()
 
     conditions = [
-        {"y": target, "parallel.0": [], "conv2": np.arange(0, 16)}
+        {"y": target, "parallel.0": [], "conv2": [i]} for i in np.arange(0, 16)
     ]
     heatmaps, relevances = [], []
-    for attr in attribution.generate(test_sample, conditions, composite, record_layer=["conv1"], init_rel=abs, exclude_parallel=False, batch_size=5, verbose=True):
+    for attr in attribution.generate(test_sample, conditions, composite, record_layer=["conv1"], init_rel=abs, batch_size=5, verbose=True, exclude_parallel=False):
 
         heatmaps.append(attr.heatmap)
-        relevances.append(relevances)
+        relevances.append(attr.relevances["conv1"])
 
-    heatmaps = torch.stack(heatmaps, dim=0)
-    relevances = torch.stack(relevances, dim=0)
+    heatmaps = torch.cat(heatmaps, dim=0)
+    relevances = torch.cat(relevances, dim=0)
+
+    gen_heatmaps = np.load("tests/data/gen_heatmaps.npz")["heatmaps"]
+    gen_conv1_relevances = np.load("tests/data/gen_conv1_relevances.npz")["conv1_relevances"]
+
+    assert np.allclose(gen_heatmaps, heatmaps.numpy())
+    assert np.allclose(gen_conv1_relevances, relevances.numpy())
+
+    ### ----------------------- exclude parallel ---------------------------
+
+    conditions = [
+        {"y": target, "conv2": [i]} for i in np.arange(0, 16)
+    ]
+    test_sample.grad = None
+    heatmaps, relevances = [], []
+    for attr in attribution.generate(test_sample, conditions, composite, record_layer=["conv1"], init_rel=abs, batch_size=5, verbose=True, exclude_parallel=True):
+
+        heatmaps.append(attr.heatmap)
+        relevances.append(attr.relevances["conv1"])
+
+    heatmaps = torch.cat(heatmaps, dim=0)
+    relevances = torch.cat(relevances, dim=0)
+
+    assert np.allclose(gen_heatmaps, heatmaps.numpy())
+    assert np.allclose(gen_conv1_relevances, relevances.numpy())
     
 
 
