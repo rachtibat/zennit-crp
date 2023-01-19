@@ -156,44 +156,6 @@ class CondAttribution:
 
         hook.fn_list.append(mask_fn)
 
-    def __call__OLD(
-            self, data: torch.tensor, conditions: List[Dict[str, List]],
-            composite: Composite = None, record_layer: List[str] = [],
-            mask_map: Union[Callable, Dict[str, Callable]] = ChannelConcept.mask, start_layer: str = None, init_rel=None,
-            on_device: str = None, exclude_parallel=True) -> attrResult:
-        
-        if exclude_parallel:
-    
-            relevances, activations = {}, {}
-            heatmap, prediction = None, None
-
-            dist_conds = self._separate_conditions(conditions)
-
-            for dist_layer in dist_conds:
-
-                conditions = dist_conds[dist_layer]
-                attr = self._attribute(data, conditions, composite, record_layer,
-                                         mask_map, start_layer, init_rel, on_device, True)
-
-                for l_name in attr.relevances:
-                    if l_name not in relevances:
-                        relevances[l_name] = attr.relevances[l_name]
-                        activations[l_name] = attr.activations[l_name]
-                    else:
-                        relevances[l_name] = torch.cat([relevances[l_name], attr.relevances[l_name]], dim=0)
-                        activations[l_name] = torch.cat([activations[l_name], attr.activations[l_name]], dim=0)
-
-                if heatmap is None:
-                    heatmap = attr.heatmap
-                    prediction = attr.prediction
-                else:
-                    heatmap = torch.cat([heatmap, attr.heatmap], dim=0)
-                    prediction = torch.cat([prediction, attr.prediction], dim=0)
-
-            return attrResult(heatmap, activations, relevances, prediction)
-        else:
-            return self._attribute(
-                data, conditions, composite, record_layer, mask_map, start_layer, init_rel, on_device, False)
 
     def __call__(
             self, data: torch.tensor, conditions: List[Dict[str, List]],
