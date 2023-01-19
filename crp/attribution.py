@@ -202,7 +202,7 @@ class CondAttribution:
             on_device: str = None, exclude_parallel=True) -> attrResult:
 
         """
-        Compute conditional attributions by masking the gradient flow of PyTorch (that is replaced by zennit with relevance values).
+        Computes conditional attributions by masking the gradient flow of PyTorch (that is replaced by zennit with relevance values).
         The relevance distribution rules (as for LRP e.g.) are described in the zennit 'composite'. Relevance can be initialized at
         the model output or 'start_layer' with the 'init_rel' argument.
         How the relevances are masked is determined by the 'conditions' as well as the 'mask_map'. In addition, 'exclude_parallel'=True,
@@ -216,19 +216,20 @@ class CondAttribution:
         data: torch.Tensor
             Input sample for which a conditional heatmap is computed
         conditions: list of dict
-            The key of a dict are string layer names and their value is list of integers describing the concept (channel, neuron) index.
+            The key of a dict are string layer names and their value is a list of integers describing the concept (channel, neuron) index.
             In general, the values are passed to the 'mask_map' function as 'concept_ids' argument.
         composite: zennit Composite
             Object that describes how relevance is distributed. Should contain a suitable zennit Canonizer.
         mask_map: dict of callable or callable
-            The keys of the dict are string layer names and the values functions that implement gradient masking. If no dict used,
+            The keys of the dict are string layer names and the values functions that implement gradient masking. If no dict is used,
             all layers are masked according to the same function. 
             The 'conditions' values are passed into the function as 'concept_ids' argument.
         start_layer: (optional) str
             Layer name where to start the backward pass instead of starting at the model output. 
             If set, 'init_rel' modifies the tensor at 'start_layer' instead and a condition containing self.MODEL_OUTPUT_NAME is ignored.
         init_rel: (optional) torch.Tensor, int or callable
-            Initializes the relevance distribution process as described in the LRP algorithm e.g.
+            Initializes the relevance distribution process as described in the LRP algorithm e.g. The callable must have the signature
+            callable(activations).
             Per default, relevance is initialized with the logit activation before a non-linearity.
         on_device: (optional) str
             On which device (cpu, cuda) to save the heatmap, intermediate activations and relevances.
@@ -372,8 +373,8 @@ class CondAttribution:
             batch_size=10, on_device=None, exclude_parallel=True, verbose=True) -> attrResult:
         """
         Computes several conditional attributions for single data point by broadcasting 'data' to length 'batch_size' and
-        iterating through the 'conditions' list. The model forward pass is performed only once and the backward graph kept in memory
-        in order to double the performance.
+        iterating through the 'conditions' list with stepsize 'batch_size'. The model forward pass is performed only once and 
+        the backward graph kept in memory in order to double the performance.
         Please refer to the docstring of the __call__ method.
 
         batch_size: int
