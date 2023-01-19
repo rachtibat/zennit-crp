@@ -274,11 +274,17 @@ class CondAttribution:
             record_layer, start_layer)
 
         # register on all layers in layer_map an empty hook
-        hook_map = {}
+        hook_map, cond_l_names = {}, []
         for cond in conditions:
             for l_name in cond.keys():
                 if l_name not in hook_map:
                     hook_map[l_name] = MaskHook([])
+                if l_name not in cond_l_names:
+                    cond_l_names.append(l_name)
+
+        if start_layer in cond_l_names:
+            cond_l_names.remove(start_layer)
+
         name_map = [([name], hook) for name, hook in hook_map.items()]
         mask_composite = NameMapComposite(name_map)
 
@@ -328,8 +334,8 @@ class CondAttribution:
                         y_targets.extend([y_targets[0] for i in range(batch_size-len(y_targets))])
                     batch_size = len(cond_batch)
 
-                layer_name = start_layer if start_layer else self.MODEL_OUTPUT_NAME
-                self.backward_initialization(pred, y_targets, init_rel, layer_name, True)
+                grad_mask = self.relevance_init(pred, y_targets, init_rel)
+                self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out, True)
 
                 attribution = self.attribution_modifier(data_batch)
                 activations, relevances = {}, {}
