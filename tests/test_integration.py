@@ -135,6 +135,29 @@ def test_fashion_attribution(get_fashion_model_data):
     
     assert np.allclose(heatmaps[-1], attr_p.heatmap.numpy()[-1])
     assert np.allclose(conv1_relevances[-1], attr_p.relevances["conv1"].numpy()[-1])
+
+def test_fashion_generator_attribution(get_fashion_model_data):
+
+    model, dataset = get_fashion_model_data
+
+    attribution = CondAttribution(model)
+
+    composite = EpsilonPlus([SequentialMergeBatchNorm()])
+
+    test_sample, target = dataset[0]
+    test_sample = test_sample.unsqueeze(0).requires_grad_()
+
+    conditions = [
+        {"y": target, "parallel.0": [], "conv2": np.arange(0, 16)}
+    ]
+    heatmaps, relevances = [], []
+    for attr in attribution.generate(test_sample, conditions, composite, record_layer=["conv1"], init_rel=abs, exclude_parallel=False, batch_size=5, verbose=True):
+
+        heatmaps.append(attr.heatmap)
+        relevances.append(relevances)
+
+    heatmaps = torch.stack(heatmaps, dim=0)
+    relevances = torch.stack(relevances, dim=0)
     
 
 
