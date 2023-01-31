@@ -94,7 +94,7 @@ class CondAttribution:
 
         return output_selection
 
-    def attribution_modifier(self, data, on_device=None):
+    def heatmap_modifier(self, data, on_device=None):
 
         heatmap = data.grad.detach()
         heatmap = heatmap.to(on_device) if on_device else heatmap
@@ -320,7 +320,7 @@ class CondAttribution:
                 grad_mask = self.relevance_init(pred, y_targets, init_rel)
                 self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out)
 
-            attribution = self.attribution_modifier(data, on_device)
+            attribution = self.heatmap_modifier(data, on_device)
             activations, relevances = {}, {}
             if len(layer_out) > 0:
                 activations, relevances = self._collect_hook_activation_relevance(layer_out, on_device)
@@ -415,13 +415,13 @@ class CondAttribution:
                 grad_mask = self.relevance_init(pred, y_targets, init_rel)
                 self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out, True)
 
-                attribution = self.attribution_modifier(data_batch)
+                heatmap = self.heatmap_modifier(data_batch)
                 activations, relevances = {}, {}
                 if len(layer_out) > 0:
                     activations, relevances = self._collect_hook_activation_relevance(
                         layer_out, on_device, batch_size)
 
-                yield attrResult(attribution[:batch_size], activations, relevances, pred[:batch_size])
+                yield attrResult(heatmap[:batch_size], activations, relevances, pred[:batch_size])
 
                 self._reset_gradients(data_batch)
                 [hook.fn_list.clear() for hook in hook_map.values()]
