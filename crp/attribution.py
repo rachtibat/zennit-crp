@@ -116,7 +116,7 @@ class CondAttribution:
         data.retain_grad()
         return data, conditions
 
-    def _check_arguments(self, data, conditions, start_layer, exclude_parallel):
+    def _check_arguments(self, data, conditions, start_layer, exclude_parallel, init_rel):
 
         if not data.requires_grad:
             raise ValueError(
@@ -127,9 +127,9 @@ class CondAttribution:
 
         distinct_cond = set()
         for cond in conditions:
-            if self.MODEL_OUTPUT_NAME not in cond and start_layer is None:
+            if self.MODEL_OUTPUT_NAME not in cond and start_layer is None and init_rel is None:
                 raise ValueError(
-                    f"Either {self.MODEL_OUTPUT_NAME} in <conditions> or <start_layer> must be defined.")
+                    f"Either {self.MODEL_OUTPUT_NAME} in <conditions> or <start_layer> or <init_rel> must be defined.")
 
             if self.MODEL_OUTPUT_NAME in cond and start_layer is not None:
                 warnings.warn(
@@ -283,7 +283,7 @@ class CondAttribution:
         """
         data, conditions = self.broadcast(data, conditions)
 
-        self._check_arguments(data, conditions, start_layer, exclude_parallel)
+        self._check_arguments(data, conditions, start_layer, exclude_parallel, init_rel)
 
         hook_map, y_targets, cond_l_names = {}, [], []
         for i, cond in enumerate(conditions):
@@ -347,7 +347,7 @@ class CondAttribution:
             If set, a progressbar is displayed.
         """
 
-        self._check_arguments(data, conditions, start_layer, exclude_parallel)
+        self._check_arguments(data, conditions, start_layer, exclude_parallel, init_rel)
 
         # register on all layers in layer_map an empty hook
         hook_map, cond_l_names = {}, []
