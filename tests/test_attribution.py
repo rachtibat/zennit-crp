@@ -32,7 +32,7 @@ class SimpleModel(nn.Module):
 
 class OneDimCondAttribution(CondAttribution):
 
-    def attribution_modifier(self, data, on_device=None):
+    def heatmap_modifier(self, data, on_device=None):
 
         heatmap = data.grad.detach()
         heatmap = heatmap.to(on_device) if on_device else heatmap
