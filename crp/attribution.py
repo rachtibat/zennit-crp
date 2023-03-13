@@ -310,14 +310,14 @@ class CondAttribution:
             if start_layer:
                 _ = modified(data)
                 pred = layer_out[start_layer]
-                grad_mask = self.relevance_init(pred, None, init_rel)
+                grad_mask = self.relevance_init(pred.clone(), None, init_rel)
                 if start_layer in cond_l_names:
                     cond_l_names.remove(start_layer)
                 self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out)
 
             else:
                 pred = modified(data)
-                grad_mask = self.relevance_init(pred, y_targets, init_rel)
+                grad_mask = self.relevance_init(pred.clone(), y_targets, init_rel)
                 self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out)
 
             attribution = self.heatmap_modifier(data, on_device)
@@ -376,6 +376,7 @@ class CondAttribution:
         data_batch = torch.repeat_interleave(data, batch_size, dim=0)
         data_batch.grad = None
         data_batch.retain_grad()
+        retain_graph = True
 
         with mask_composite.context(self.model), composite.context(self.model) as modified:
 
@@ -408,12 +409,14 @@ class CondAttribution:
 
                 if b == batches-1:
                     # last batch may have len(y_targets) != batch_size. Padded part is ignored later.
+                    # and backward graph is freed with retain_graph=False
                     if not start_layer:
                         y_targets.extend([y_targets[0] for i in range(batch_size-len(y_targets))])
                     batch_size = len(cond_batch)
+                    retain_graph = False
 
-                grad_mask = self.relevance_init(pred, y_targets, init_rel)
-                self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out, True)
+                grad_mask = self.relevance_init(pred.clone(), y_targets, init_rel)
+                self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out, retain_graph)
 
                 heatmap = self.heatmap_modifier(data_batch)
                 activations, relevances = {}, {}
