@@ -17,12 +17,30 @@ attrGraphResult = namedtuple("AttributionGraphResults", "nodes, connections")
 
 class CondAttribution:
 
-    def __init__(self, model: torch.nn.Module, device: torch.device = None) -> None:
+    def __init__(self, model: torch.nn.Module, device: torch.device = None, overwrite_data_grad=True, no_param_grad=True) -> None:
+        """
+        This class contains the functionality to compute conditional attributions.
+
+        Parameters:
+        ----------
+        model: torch.nn.Module
+        device: torch.device
+            specifies where the model and subsequent computation takes place.
+        overwrite_data_grad: boolean
+            If True, the .grad attribute of the 'data' argument is set to None before each __call__.
+        no_param_grad: boolean
+            If True, sets the requires_grad attribute of all model parameters to zero, to reduce the GPU memory footprint.
+        """
 
         self.MODEL_OUTPUT_NAME = "y"
 
         self.device = next(model.parameters()).device if device is None else device
         self.model = model
+        self.overwrite_data_grad = overwrite_data_grad
+
+        if no_param_grad:
+            self.model.requires_grad_(False)
+
 
     def backward(self, pred, grad_mask, partial_backward, layer_names, layer_out, generate=False):
 
@@ -120,21 +138,23 @@ class CondAttribution:
 
         if not data.requires_grad:
             raise ValueError(
-                "requires_grad attribute of <data> must be True.")
+                "requires_grad attribute of 'data' must be True.")
 
-        if data.grad is not None:
-            warnings.warn("'data' already has a filled .grad attribute. Set to None if not intended.")
+        if self.overwrite_data_grad:
+            data.grad = None
+        elif data.grad is not None:
+            warnings.warn("'data' already has a filled .grad attribute. Set to None if not intended or set 'overwrite_grad' to True.")
 
         distinct_cond = set()
         for cond in conditions:
             if self.MODEL_OUTPUT_NAME not in cond and start_layer is None and init_rel is None:
                 raise ValueError(
-                    f"Either {self.MODEL_OUTPUT_NAME} in <conditions> or <start_layer> or <init_rel> must be defined.")
+                    f"Either {self.MODEL_OUTPUT_NAME} in 'conditions' or 'start_layer' or 'init_rel' must be defined.")
 
             if self.MODEL_OUTPUT_NAME in cond and start_layer is not None:
                 warnings.warn(
-                    f"You defined a condition for {self.MODEL_OUTPUT_NAME} that has no effect, since the <start_layer> {start_layer}"
-                    " is provided where the backward pass begins. If this behavior is not wished, remove <start_layer>.")
+                    f"You defined a condition for {self.MODEL_OUTPUT_NAME} that has no effect, since the 'start_layer' {start_layer}"
+                    " is provided where the backward pass begins. If this behavior is not wished, remove 'start_layer'.")
 
             if exclude_parallel:
 
@@ -620,7 +640,7 @@ class AttributionGraph:
             b, next_cond_tuples = 0, []
             for attr in self.attribution.generate(
                     sample, conditions, composite, record_layer=input_layers,
-                    mask_map=self.mask_map, start_layer=start_layer, batch_size=batch_size, verbose=verbose):
+                    mask_map=self.mask_map, start_layer=start_layer, batch_size=batch_size, verbose=verbose, exclude_parallel=False):
 
                 self._attribute_lower_level(
                     cond_tuples[b * batch_size: (b + 1) * batch_size],
