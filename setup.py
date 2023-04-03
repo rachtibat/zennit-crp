@@ -40,7 +40,7 @@ def get_long_description(project_path):
 
 setup(
     name='zennit-crp',
-    version='0.5.3',
+    version='0.6.0',
     description='Concept Relevance Propagation and Relevance Maximization',
     author='Reduan Achtibat',
     license='BSD 3-Clause Clear License',
