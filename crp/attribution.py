@@ -330,14 +330,14 @@ class CondAttribution:
             if start_layer:
                 _ = modified(data)
                 pred = layer_out[start_layer]
-                grad_mask = self.relevance_init(pred.clone(), None, init_rel)
+                grad_mask = self.relevance_init(pred.detach().clone(), None, init_rel)
                 if start_layer in cond_l_names:
                     cond_l_names.remove(start_layer)
                 self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out)
 
             else:
                 pred = modified(data)
-                grad_mask = self.relevance_init(pred.clone(), y_targets, init_rel)
+                grad_mask = self.relevance_init(pred.detach().clone(), y_targets, init_rel)
                 self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out)
 
             attribution = self.heatmap_modifier(data, on_device)
@@ -435,7 +435,7 @@ class CondAttribution:
                     batch_size = len(cond_batch)
                     retain_graph = False
 
-                grad_mask = self.relevance_init(pred.clone(), y_targets, init_rel)
+                grad_mask = self.relevance_init(pred.detach().clone(), y_targets, init_rel)
                 self.backward(pred, grad_mask, exclude_parallel, cond_l_names, layer_out, retain_graph)
 
                 heatmap = self.heatmap_modifier(data_batch)
