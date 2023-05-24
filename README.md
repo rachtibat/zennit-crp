@@ -6,7 +6,7 @@
   with Relevance and Activation Maximization.
 </h3>
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7962574.svg)](https://doi.org/10.5281/zenodo.7962574)
+[![DOI](https://zenodo.org/badge/501032479.svg)](https://zenodo.org/badge/latestdoi/501032479)
 [![PyPI version](https://badge.fury.io/py/zennit-crp.svg)](https://badge.fury.io/py/zennit-crp)
 ![Tests status](https://img.shields.io/badge/tests-passing-brightgreen)
 
