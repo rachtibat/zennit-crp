@@ -51,6 +51,7 @@ setup(
     install_requires=[
         'zennit<=0.4.6',
         'torch>=1.7.0, <2.0.0',
+        'numpy<=1.23.5',
         'tqdm',
         'matplotlib'
     ],
