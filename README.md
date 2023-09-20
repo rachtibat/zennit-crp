@@ -12,7 +12,7 @@
 [![PyPI version](https://badge.fury.io/py/zennit-crp.svg)](https://badge.fury.io/py/zennit-crp)
 ![Tests status](https://img.shields.io/badge/tests-passing-brightgreen)
 
-## Towards human-understandable Explanations
+## ❔ From “Where” to “What”
 
 Traditional heatmaps are rather
 uninformative despite being class-specific.
@@ -27,7 +27,7 @@ eyelids, and pronounced tear sacs next to a large knobby nose.
 ![text](images/overview.png "Title")
 
 ### 🌊 Concepts are like waves in the sea  
-Typically, backpropagation-based attribution methods iteratively propagate attribution scores from one network output of choice through and between all hidden units of a neural network towards the model input, without consideration for the
+Typically, backpropagation-based attribution methods iteratively propagate attribution scores from one network output of choice through all hidden units of a neural network towards the model input, without consideration for the specific
 role and semantic meaning of latent structures of the model involved in the inference process. 
 
 Contemporary deep learning literature, however, agrees that latent
@@ -35,18 +35,21 @@ structures of neural networks are capable of encoding abstract human-understanda
 inaccessible to the human observer.
 
 ### 🏄 Disentangling Attribution Flows 
-With CRP, we propose a method to disentangle the attribution flows associated with concepts learned by the model via conditional backpropagation i.e. masking of relevance flows, resulting in explanations being presented as a multitude of concept-conditional 
+With CRP, we propose a method to disentangle the attribution flows associated with concepts learned by the model via conditional backpropagation i.e. masking of relevance flows, resulting in explanations being presented as distinct concept-conditional 
 relevance maps for network units that are most relevant for the prediction.
 
 ### 🔍 Revealing the meaning of a concept
 A canonical approach for gaining insight into the meaning and function
 of latent model structures is Activation Maximization (ActMax) 
-for generating or selecting samples as representations for concepts encoded in hidden space. We find, however, that (maximizing) the activation of a latent encoding by a given data point does not always correspond to its utility to the model in an inference context, putting the faithfulness of activation-based example selection
+for generating or selecting samples as representations for concepts encoded in hidden space. We find, however, that (maximizing) the activation of a latent encoding by a given data point does not always correspond to its utility to the model in an inference context, as adversarial examples demonstrate - putting the faithfulness of activation-based example selection
 for latent concept representation into question.
 We therefore introduce Relevance Maximization (RelMax), as an alternative measure to ActMax, with the objective to maximize the relevance criterion for the selection of representative samples for latent model features. 
 
+![text](images/rel_vs_act.png "Title")
 
+(Left) According to RelMax, the coarse/gray pattern detector is by the model mainly utilized to classify reptiles instead of fruits. In hindsight, the bananas and artichokes obtained via ActMax structurally match the scale pattern of reptiles, however the color saturation overshoots.
 
+(Right) ActMax suggests that the neuron's function consists of the detection of thin white lines, since spider webs or whiskers are visible in the images. On the other hand, samples drawn to maximize relevance mostly depict written characters. Thus, activation indicates which general pattern a filter activates, whereas relevance clarifies its specific usage in classification.
 
 ## Project status
 
