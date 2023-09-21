@@ -51,6 +51,23 @@ We therefore introduce Relevance Maximization (RelMax), as an alternative measur
 
 (Right) ActMax suggests that the neuron's function consists of the detection of thin white lines, since spider webs or whiskers are visible in the images. On the other hand, samples drawn to maximize relevance mostly depict written characters. Thus, activation indicates which general pattern a filter activates, whereas relevance clarifies its specific usage in classification.
 
+### 📃 Citation
+```
+@article{achtibat2023attribution,
+  title={From attribution maps to human-understandable explanations through Concept Relevance Propagation},
+  author={Achtibat, Reduan and Dreyer, Maximilian and Eisenbraun, Ilona and Bosse, Sebastian and Wiegand, Thomas and Samek, Wojciech and Lapuschkin, Sebastian},
+  journal={Nature Machine Intelligence},
+  volume={5},
+  number={9},
+  pages={1006–1019},
+  year={2023},
+  doi={10.1038/s42256-023-00711-8},
+  url={https://doi.org/10.1038/s42256-023-00711-8},
+  issn={2522-5839},
+  publisher={Nature Publishing Group UK London}
+}
+```
+
 ## Project status
 
 Project is under development but should be stable. Please expect interfaces to change in future releases.
