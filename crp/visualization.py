@@ -446,8 +446,8 @@ class FeatureVisualization:
             data_batch = data[b * batch_size: (b + 1) * batch_size].detach().requires_grad_()
             
             if rf:
-                neuron_ids = neuron_ids[b * batch_size: (b + 1) * batch_size]
-                conditions = [{layer_name: {concept_id: n_index}} for n_index in neuron_ids]
+                batch_neuron_ids = neuron_ids[b * batch_size: (b + 1) * batch_size]
+                conditions = [{layer_name: {concept_id: n_index}} for n_index in batch_neuron_ids]
                 attr = self.attribution(data_batch, conditions, composite, mask_map=ChannelConcept.mask_rf, start_layer=layer_name, on_device=self.device, 
                     exclude_parallel=False)
             else:
