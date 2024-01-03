@@ -123,7 +123,7 @@ class Statistics:
 
         for path in path_list:
 
-            l_name, filename = path.split("/")[-2:]
+            l_name, filename = path.replace("\\","/").split("/")[-2:]
             target = filename.split("_")[0]
 
             d_c_sorted = np.load(path + "data.npy")

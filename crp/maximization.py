@@ -111,7 +111,7 @@ class Maximization:
         pbar = tqdm(total=len(path_list), dynamic_ncols=True)
 
         for path in path_list:
-            filename = path.split("/")[-1]
+            filename = path.replace("\\","/").split("/")[-1]
             l_name = re.split(r"_[0-9]+_[0-9]+_\b", filename)[0]
 
             d_c_sorted = np.load(path + "data.npy")
