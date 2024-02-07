@@ -17,6 +17,7 @@ from crp.hooks import FeatVisHook
 from crp.helper import load_maximization, load_statistics, load_stat_targets
 from crp.image import vis_img_heatmap, vis_opaque_img
 from crp.cache import Cache
+from crp.dataloader import DynamicSampler, DynamicLoader
 
 
 class FeatureVisualization:
@@ -26,6 +27,7 @@ class FeatureVisualization:
             max_target="sum", abs_norm=True, path="FeatureVisualization", device=None, cache: Cache=None):
 
         self.dataset = dataset
+        self.sampler = DynamicSampler()
         self.layer_map = layer_map
         self.preprocess_fn = preprocess_fn
 
@@ -47,24 +49,22 @@ class FeatureVisualization:
             return self.preprocess_fn(data)
         else:
             return data
-
-    def get_data_sample(self, index, preprocessing=True) -> Tuple[torch.Tensor, int]:
+    
+    def collate_fn(self, batch, preprocessing=True):
         """
-        returns a data sample from dataset at index.
+        returns a batch of data and targets. If preprocessing is True, the data is preprocessed.
 
         Parameter:
-            index: integer
+            batch: list of (data, targets)
             preprocessing: boolean.
                 If True, return the sample after preprocessing. If False, return the sample for plotting.
         """
-
-        data, target = self.dataset[index]
-        data = data.to(self.device).unsqueeze(0)
+        data, targets = zip(*batch)
+        data_tensor = torch.stack(data, dim=0)
         if preprocessing:
-            data = self.preprocess_data(data)
-        
-        data.requires_grad = True
-        return data, target
+            data_tensor  =  self.preprocess_data(data_tensor)
+        data_tensor.requires_grad = True
+        return data_tensor, targets
 
     def multitarget_to_single(self, multi_target):
 
@@ -111,45 +111,54 @@ class FeatureVisualization:
 
         pbar = tqdm(total=batches, dynamic_ncols=True)
 
-        for b in range(batches):
+        collate_fn = lambda batch: self.collate_fn(batch, preprocessing=True)
+        loader = DynamicLoader(
+            self.dataset, 
+            sampler=self.sampler, 
+            batch_size=batch_size, 
+            collate_fn=collate_fn,
+            num_workers=4,
+        )
+        with loader[samples] as iterator:
+            for b, batch in enumerate(iterator):
 
-            pbar.update(1)
+                pbar.update(1)
 
-            samples_batch = samples[b * batch_size: (b + 1) * batch_size]
-            data_batch, targets_samples = self.get_data_concurrently(samples_batch, preprocessing=True)
+                samples_batch = samples[b * batch_size: (b + 1) * batch_size]
+                data_batch, targets_samples = batch
 
-            targets_samples = np.array(targets_samples)  # numpy operation needed
+                targets_samples = np.array(targets_samples)  # numpy operation needed
 
-            # convert multi target to single target if user defined the method
-            data_broadcast, targets, sample_indices = [], [], []
-            try:
-                for i_t, target in enumerate(targets_samples):
-                    single_targets = self.multitarget_to_single(target)
-                    for st in single_targets:
-                        targets.append(st)
-                        data_broadcast.append(data_batch[i_t])
-                        sample_indices.append(samples_batch[i_t])
-                if len(data_broadcast) == 0:
-                    continue
-                # TODO: test stack
-                data_broadcast = torch.stack(data_broadcast, dim=0)
-                sample_indices = np.array(sample_indices)
-                targets = np.array(targets)
+                # convert multi target to single target if user defined the method
+                data_broadcast, targets, sample_indices = [], [], []
+                try:
+                    for i_t, target in enumerate(targets_samples):
+                        single_targets = self.multitarget_to_single(target)
+                        for st in single_targets:
+                            targets.append(st)
+                            data_broadcast.append(data_batch[i_t])
+                            sample_indices.append(samples_batch[i_t])
+                    if len(data_broadcast) == 0:
+                        continue
+                    # TODO: test stack
+                    data_broadcast = torch.stack(data_broadcast, dim=0)
+                    sample_indices = np.array(sample_indices)
+                    targets = np.array(targets)
 
-            except NotImplementedError:
-                data_broadcast, targets, sample_indices = data_batch, targets_samples, samples_batch
+                except NotImplementedError:
+                    data_broadcast, targets, sample_indices = data_batch, targets_samples, samples_batch
 
-            conditions = [{self.attribution.MODEL_OUTPUT_NAME: [t]} for t in targets]
-            # dict_inputs is linked to FeatHooks
-            dict_inputs["sample_indices"] = sample_indices
-            dict_inputs["targets"] = targets
+                conditions = [{self.attribution.MODEL_OUTPUT_NAME: [t]} for t in targets]
+                # dict_inputs is linked to FeatHooks
+                dict_inputs["sample_indices"] = sample_indices
+                dict_inputs["targets"] = targets
 
-            # composites are already registered before
-            self.attribution(data_broadcast, conditions, None, exclude_parallel=False)
+                # composites are already registered before
+                self.attribution(data_broadcast, conditions, None, exclude_parallel=False)
 
-            if b % checkpoint == checkpoint - 1:
-                self._save_results((last_checkpoint, sample_indices[-1] + 1))
-                last_checkpoint = sample_indices[-1] + 1
+                if b % checkpoint == checkpoint - 1:
+                    self._save_results((last_checkpoint, sample_indices[-1] + 1))
+                    last_checkpoint = sample_indices[-1] + 1
 
         # TODO: what happens if result arrays are empty?
         self._save_results((last_checkpoint, sample_indices[-1] + 1))
@@ -206,29 +215,6 @@ class FeatureVisualization:
         saved_files["a_stats"] = self.ActStats.collect_results(checkpoints["a_stats"], d_index)
 
         return saved_files
-
-    def get_data_concurrently(self, indices: Union[List, np.ndarray, torch.tensor], preprocessing=False):
-
-        if len(indices) == 1:
-            data, label = self.get_data_sample(indices[0], preprocessing)
-            return data, label
-
-        threads = []
-        data_returned = []
-        labels_returned = []
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            for index in indices:
-                future = executor.submit(self.get_data_sample, index, preprocessing)
-                threads.append(future)
-
-        for t in threads:
-            single_data = t.result()[0]
-            single_label = t.result()[1]
-            data_returned.append(single_data)
-            labels_returned.append(single_label)
-
-        data_returned = torch.cat(data_returned, dim=0)
-        return data_returned, labels_returned
 
 
     def cache_reference(func):
@@ -415,7 +401,17 @@ class FeatureVisualization:
 
     def _load_ref_and_attribution(self, d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size):
 
-        data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=False)
+        collate_fn = lambda batch: self.collate_fn(batch, preprocessing=False)
+        loader = DynamicLoader(
+            self.dataset, 
+            sampler=self.sampler, 
+            batch_size=batch_size, 
+            collate_fn=collate_fn,
+            num_workers=4,
+        )
+        with loader[d_indices] as iterator:
+            data_batch_list, _ = zip(*iterator)
+            data_batch = torch.cat(data_batch_list, dim=0)
 
         if composite:
             data_p = self.preprocess_data(data_batch)
