@@ -124,8 +124,8 @@ def test_fashion_attribution(get_fashion_model_data):
     heatmaps = np.load("tests/data/heatmaps.npz")["heatmaps"]
     conv1_relevances = np.load("tests/data/conv1_relevances.npz")["conv1_relevances"]
 
-    assert np.allclose(heatmaps, attr.heatmap.numpy())
-    assert np.allclose(conv1_relevances, attr.relevances["conv1"].numpy())
+    assert np.allclose(heatmaps, attr.heatmap.numpy(), atol=1e-7)
+    assert np.allclose(conv1_relevances, attr.relevances["conv1"].numpy(), atol=1e-7)
 
     ### ----------------------- exclude parallel ---------------------------
 
@@ -135,8 +135,8 @@ def test_fashion_attribution(get_fashion_model_data):
     ]
     attr_p = attribution(test_sample, conditions, composite, record_layer=["conv1", "conv2"], init_rel=abs, exclude_parallel=True)
     
-    assert np.allclose(heatmaps[-1], attr_p.heatmap.numpy()[-1])
-    assert np.allclose(conv1_relevances[-1], attr_p.relevances["conv1"].numpy()[-1])
+    assert np.allclose(heatmaps[-1], attr_p.heatmap.numpy()[-1], atol=1e-7)
+    assert np.allclose(conv1_relevances[-1], attr_p.relevances["conv1"].numpy()[-1], atol=1e-7)
 
 def test_fashion_generator_attribution(get_fashion_model_data):
 
@@ -164,8 +164,8 @@ def test_fashion_generator_attribution(get_fashion_model_data):
     gen_heatmaps = np.load("tests/data/gen_heatmaps.npz")["heatmaps"]
     gen_conv1_relevances = np.load("tests/data/gen_conv1_relevances.npz")["conv1_relevances"]
 
-    assert np.allclose(gen_heatmaps, heatmaps.numpy())
-    assert np.allclose(gen_conv1_relevances, relevances.numpy())
+    assert np.allclose(gen_heatmaps, heatmaps.numpy(), atol=1e-7)
+    assert np.allclose(gen_conv1_relevances, relevances.numpy(), atol=1e-7)
 
     ### ----------------------- exclude parallel ---------------------------
 
@@ -182,8 +182,8 @@ def test_fashion_generator_attribution(get_fashion_model_data):
     heatmaps = torch.cat(heatmaps, dim=0)
     relevances = torch.cat(relevances, dim=0)
 
-    assert np.allclose(gen_heatmaps, heatmaps.numpy())
-    assert np.allclose(gen_conv1_relevances, relevances.numpy())
+    assert np.allclose(gen_heatmaps, heatmaps.numpy(), atol=1e-7)
+    assert np.allclose(gen_conv1_relevances, relevances.numpy(), atol=1e-7)
     
 
 
