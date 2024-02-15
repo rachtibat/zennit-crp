@@ -4,7 +4,6 @@ import torch
 import numpy as np
 import math
 from collections.abc import Iterable
-import concurrent.futures
 import functools
 import inspect
 from tqdm import tqdm
@@ -70,17 +69,17 @@ class FeatureVisualization:
 
         raise NotImplementedError
 
-    def run(self, composite: Composite, data_start, data_end, batch_size=32, checkpoint=500, on_device=None):
+    def run(self, composite: Composite, batch_size=32, checkpoint=500, on_device=None, custom_collate_fn=None, num_workers=4):
 
         print("Running Analysis...")
-        saved_checkpoints = self.run_distributed(composite, data_start, data_end, batch_size, checkpoint, on_device)
+        saved_checkpoints = self.run_distributed(composite, batch_size, checkpoint, on_device, custom_collate_fn, num_workers)
 
         print("Collecting results...")
         saved_files = self.collect_results(saved_checkpoints)
 
         return saved_files
 
-    def run_distributed(self, composite: Composite, data_start, data_end, batch_size=16, checkpoint=500, on_device=None):
+    def run_distributed(self, composite: Composite, batch_size=16, checkpoint=500, on_device=None, custom_collate_fn=None, num_workers=4):
         """
         max batch_size = max(multi_targets) * data_batch
         data_end: exclusively counted
@@ -88,15 +87,7 @@ class FeatureVisualization:
 
         self.saved_checkpoints = {"r_max": [], "a_max": [], "r_stats": [], "a_stats": []}
         last_checkpoint = 0
-
-        n_samples = data_end - data_start
-        samples = np.arange(start=data_start, stop=data_end)
-
-        if n_samples > batch_size:
-            batches = math.ceil(n_samples / batch_size)
-        else:
-            batches = 1
-            batch_size = n_samples
+        samples = np.arange(len(self.dataset))
 
         # feature visualization is performed inside forward and backward hook of layers
         name_map, dict_inputs = [], {}
@@ -108,21 +99,20 @@ class FeatureVisualization:
         if composite:
             composite.register(self.attribution.model)
         fv_composite.register(self.attribution.model)
-
-        pbar = tqdm(total=batches, dynamic_ncols=True)
-
-        collate_fn = lambda batch: self.collate_fn(batch, preprocessing=True)
+        
+        if custom_collate_fn is None:
+            collate_fn = lambda batch: self.collate_fn(batch, preprocessing=True)
+        else:
+            collate_fn = custom_collate_fn
         loader = DynamicLoader(
             self.dataset, 
             sampler=self.sampler, 
             batch_size=batch_size, 
             collate_fn=collate_fn,
-            num_workers=4,
+            num_workers=num_workers,
         )
         with loader[samples] as iterator:
-            for b, batch in enumerate(iterator):
-
-                pbar.update(1)
+            for b, batch in tqdm(enumerate(iterator), total=len(self.dataset)//batch_size, dynamic_ncols=True):
 
                 samples_batch = samples[b * batch_size: (b + 1) * batch_size]
                 data_batch, targets_samples = batch
@@ -166,8 +156,6 @@ class FeatureVisualization:
         if composite:
             composite.remove()
         fv_composite.remove()
-
-        pbar.close()
 
         return self.saved_checkpoints
 
@@ -278,7 +266,7 @@ class FeatureVisualization:
     @cache_reference
     def get_max_reference(
             self, concept_ids: Union[int,list], layer_name: str, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None,
-            rf=False, plot_fn=vis_img_heatmap, batch_size=32)-> Dict:
+            rf=False, plot_fn=vis_img_heatmap, batch_size=32, custom_collate_fn=None)-> Dict:
         """
         Retreive reference samples for a list of concepts in a layer. Relevance and Activation Maximization
         are availble if FeatureVisualization was computed for the mode. In addition, conditional heatmaps can be computed on reference samples.
@@ -306,6 +294,9 @@ class FeatureVisualization:
             If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
+        custom_collate_fn: callable function
+            If set, the function is used to collate the data. The function should have the signature (batch: list) and return the 
+            preprocessed data and targets. If None, the default collate function is used.
 
         Returns:
         -------
@@ -332,13 +323,13 @@ class FeatureVisualization:
             d_indices = d_c_sorted[r_range[0]:r_range[1], c_id]
             n_indices = rf_c_sorted[r_range[0]:r_range[1], c_id]
 
-            ref_c[c_id] = self._load_ref_and_attribution(d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size)
+            ref_c[c_id] = self._load_ref_and_attribution(d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size, custom_collate_fn)
 
         return ref_c
 
     @cache_reference
     def get_stats_reference(self, concept_id: int, layer_name: str, targets: Union[int, list], mode="relevance", r_range: Tuple[int, int] = (0, 8),
-            composite=None, rf=False, plot_fn=vis_img_heatmap, batch_size=32):
+            composite=None, rf=False, plot_fn=vis_img_heatmap, batch_size=32, custom_collate_fn=None):
         """
         Retreive reference samples for a single concept in a layer wrt. different explanation targets i.e. returns the reference samples
         that are computed by self.compute_stats. Relevance and Activation are availble if FeatureVisualization was computed for the statitics mode. 
@@ -367,6 +358,9 @@ class FeatureVisualization:
             If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
+        custom_collate_fn: callable function
+            If set, the function is used to collate the data. The function should have the signature (batch: list) and return the 
+            preprocessed data and targets. If None, the default collate function is used.
 
         Returns:
         -------
@@ -395,13 +389,16 @@ class FeatureVisualization:
             d_indices = d_c_sorted[r_range[0]:r_range[1], concept_id]
             n_indices = rf_c_sorted[r_range[0]:r_range[1], concept_id]
 
-            ref_t[f"{concept_id}:{t}"] = self._load_ref_and_attribution(d_indices, concept_id, n_indices, layer_name, composite, rf, plot_fn, batch_size)
+            ref_t[f"{concept_id}:{t}"] = self._load_ref_and_attribution(d_indices, concept_id, n_indices, layer_name, composite, rf, plot_fn, batch_size, custom_collate_fn)
 
         return ref_t
 
-    def _load_ref_and_attribution(self, d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size):
+    def _load_ref_and_attribution(self, d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size, custom_collate_fn):
 
-        collate_fn = lambda batch: self.collate_fn(batch, preprocessing=False)
+        if custom_collate_fn is None:
+            collate_fn = lambda batch: self.collate_fn(batch, preprocessing=False)
+        else:
+            collate_fn = custom_collate_fn
         loader = DynamicLoader(
             self.dataset, 
             sampler=self.sampler, 
@@ -411,9 +408,10 @@ class FeatureVisualization:
         )
         with loader[d_indices] as iterator:
             data_batch_list, _ = zip(*iterator)
-            data_batch = torch.cat(data_batch_list, dim=0)
+            
 
         if composite:
+            data_batch = torch.cat(data_batch_list, dim=0)
             data_p = self.preprocess_data(data_batch)
             heatmaps = self._attribution_on_reference(data_p, c_id, layer_name, composite, rf, n_indices, batch_size)
 
@@ -423,7 +421,7 @@ class FeatureVisualization:
                 return data_batch.detach().cpu(), heatmaps.detach().cpu()
 
         else:
-            return data_batch.detach().cpu()
+            return data_batch_list
 
     def _attribution_on_reference(self, data, concept_id: int, layer_name: str, composite, rf=False, neuron_ids: list=[], batch_size=32):
 
