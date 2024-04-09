@@ -145,7 +145,7 @@ from crp.visualization import FeatureVisualization
 from crp.image import plot_grid
 
 # define which concept is used in each layer
-layer_map = {(name, cc) for name in layer_names}
+layer_map = {name: cc for name in layer_names}
 
 # compute visualization (it takes for VGG16 and ImageNet testset on Titan RTX 30 min)
 fv = FeatureVisualization(attribution, dataset, layer_map)
