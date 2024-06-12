@@ -1,6 +1,6 @@
 <div align="center">
   <img src="images/crp_logo.png" width="250"/>
-  <p>An open-source library for neural network interpretability built on <a href="https://github.com/chr5tphr/zennit">zennit</a>.<br>
+  <p>An open-source pytorch library for neural network interpretability built on <a href="https://github.com/chr5tphr/zennit">zennit</a>.<br>
   Read the paper now as part of <a href="https://www.nature.com/articles/s42256-023-00711-8">Nature Machine Intelligence</a> (Open Access)</p>
 </div>
 
