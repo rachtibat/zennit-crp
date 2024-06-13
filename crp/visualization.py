@@ -4,7 +4,6 @@ import torch
 import numpy as np
 import math
 from collections.abc import Iterable
-import concurrent.futures
 import functools
 import inspect
 from tqdm import tqdm
@@ -17,6 +16,7 @@ from crp.hooks import FeatVisHook
 from crp.helper import load_maximization, load_statistics, load_stat_targets
 from crp.image import vis_img_heatmap, vis_opaque_img
 from crp.cache import Cache
+from crp.dataloader import DynamicSampler, DynamicLoader
 
 
 class FeatureVisualization:
@@ -26,6 +26,7 @@ class FeatureVisualization:
             max_target="sum", abs_norm=True, path="FeatureVisualization", device=None, cache: Cache=None):
 
         self.dataset = dataset
+        self.sampler = DynamicSampler()
         self.layer_map = layer_map
         self.preprocess_fn = preprocess_fn
 
@@ -47,40 +48,38 @@ class FeatureVisualization:
             return self.preprocess_fn(data)
         else:
             return data
-
-    def get_data_sample(self, index, preprocessing=True) -> Tuple[torch.Tensor, int]:
+    
+    def collate_fn(self, batch, preprocessing=True):
         """
-        returns a data sample from dataset at index.
+        returns a batch of data and targets. If preprocessing is True, the data is preprocessed.
 
         Parameter:
-            index: integer
+            batch: list of (data, targets)
             preprocessing: boolean.
                 If True, return the sample after preprocessing. If False, return the sample for plotting.
         """
-
-        data, target = self.dataset[index]
-        data = data.to(self.device).unsqueeze(0)
+        data, targets = zip(*batch)
+        data_tensor = torch.stack(data, dim=0)
         if preprocessing:
-            data = self.preprocess_data(data)
-        
-        data.requires_grad = True
-        return data, target
+            data_tensor  =  self.preprocess_data(data_tensor)
+        data_tensor.requires_grad = True
+        return data_tensor, targets
 
     def multitarget_to_single(self, multi_target):
 
         raise NotImplementedError
 
-    def run(self, composite: Composite, data_start, data_end, batch_size=32, checkpoint=500, on_device=None):
+    def run(self, composite: Composite, batch_size=32, checkpoint=500, on_device=None, custom_collate_fn=None, num_workers=4):
 
         print("Running Analysis...")
-        saved_checkpoints = self.run_distributed(composite, data_start, data_end, batch_size, checkpoint, on_device)
+        saved_checkpoints = self.run_distributed(composite, batch_size, checkpoint, on_device, custom_collate_fn, num_workers)
 
         print("Collecting results...")
         saved_files = self.collect_results(saved_checkpoints)
 
         return saved_files
 
-    def run_distributed(self, composite: Composite, data_start, data_end, batch_size=16, checkpoint=500, on_device=None):
+    def run_distributed(self, composite: Composite, batch_size=16, checkpoint=500, on_device=None, custom_collate_fn=None, num_workers=4):
         """
         max batch_size = max(multi_targets) * data_batch
         data_end: exclusively counted
@@ -88,15 +87,7 @@ class FeatureVisualization:
 
         self.saved_checkpoints = {"r_max": [], "a_max": [], "r_stats": [], "a_stats": []}
         last_checkpoint = 0
-
-        n_samples = data_end - data_start
-        samples = np.arange(start=data_start, stop=data_end)
-
-        if n_samples > batch_size:
-            batches = math.ceil(n_samples / batch_size)
-        else:
-            batches = 1
-            batch_size = n_samples
+        samples = np.arange(len(self.dataset))
 
         # feature visualization is performed inside forward and backward hook of layers
         name_map, dict_inputs = [], {}
@@ -108,48 +99,56 @@ class FeatureVisualization:
         if composite:
             composite.register(self.attribution.model)
         fv_composite.register(self.attribution.model)
+        
+        if custom_collate_fn is None:
+            collate_fn = lambda batch: self.collate_fn(batch, preprocessing=True)
+        else:
+            collate_fn = custom_collate_fn
+        loader = DynamicLoader(
+            self.dataset, 
+            sampler=self.sampler, 
+            batch_size=batch_size, 
+            collate_fn=collate_fn,
+            num_workers=num_workers,
+        )
+        with loader[samples] as iterator:
+            for b, batch in tqdm(enumerate(iterator), total=len(self.dataset)//batch_size, dynamic_ncols=True):
 
-        pbar = tqdm(total=batches, dynamic_ncols=True)
+                samples_batch = samples[b * batch_size: (b + 1) * batch_size]
+                data_batch, targets_samples = batch
 
-        for b in range(batches):
+                targets_samples = np.array(targets_samples)  # numpy operation needed
 
-            pbar.update(1)
+                # convert multi target to single target if user defined the method
+                data_broadcast, targets, sample_indices = [], [], []
+                try:
+                    for i_t, target in enumerate(targets_samples):
+                        single_targets = self.multitarget_to_single(target)
+                        for st in single_targets:
+                            targets.append(st)
+                            data_broadcast.append(data_batch[i_t])
+                            sample_indices.append(samples_batch[i_t])
+                    if len(data_broadcast) == 0:
+                        continue
+                    # TODO: test stack
+                    data_broadcast = torch.stack(data_broadcast, dim=0)
+                    sample_indices = np.array(sample_indices)
+                    targets = np.array(targets)
 
-            samples_batch = samples[b * batch_size: (b + 1) * batch_size]
-            data_batch, targets_samples = self.get_data_concurrently(samples_batch, preprocessing=True)
+                except NotImplementedError:
+                    data_broadcast, targets, sample_indices = data_batch, targets_samples, samples_batch
 
-            targets_samples = np.array(targets_samples)  # numpy operation needed
+                conditions = [{self.attribution.MODEL_OUTPUT_NAME: [t]} for t in targets]
+                # dict_inputs is linked to FeatHooks
+                dict_inputs["sample_indices"] = sample_indices
+                dict_inputs["targets"] = targets
 
-            # convert multi target to single target if user defined the method
-            data_broadcast, targets, sample_indices = [], [], []
-            try:
-                for i_t, target in enumerate(targets_samples):
-                    single_targets = self.multitarget_to_single(target)
-                    for st in single_targets:
-                        targets.append(st)
-                        data_broadcast.append(data_batch[i_t])
-                        sample_indices.append(samples_batch[i_t])
-                if len(data_broadcast) == 0:
-                    continue
-                # TODO: test stack
-                data_broadcast = torch.stack(data_broadcast, dim=0)
-                sample_indices = np.array(sample_indices)
-                targets = np.array(targets)
+                # composites are already registered before
+                self.attribution(data_broadcast, conditions, None, exclude_parallel=False)
 
-            except NotImplementedError:
-                data_broadcast, targets, sample_indices = data_batch, targets_samples, samples_batch
-
-            conditions = [{self.attribution.MODEL_OUTPUT_NAME: [t]} for t in targets]
-            # dict_inputs is linked to FeatHooks
-            dict_inputs["sample_indices"] = sample_indices
-            dict_inputs["targets"] = targets
-
-            # composites are already registered before
-            self.attribution(data_broadcast, conditions, None, exclude_parallel=False)
-
-            if b % checkpoint == checkpoint - 1:
-                self._save_results((last_checkpoint, sample_indices[-1] + 1))
-                last_checkpoint = sample_indices[-1] + 1
+                if b % checkpoint == checkpoint - 1:
+                    self._save_results((last_checkpoint, sample_indices[-1] + 1))
+                    last_checkpoint = sample_indices[-1] + 1
 
         # TODO: what happens if result arrays are empty?
         self._save_results((last_checkpoint, sample_indices[-1] + 1))
@@ -157,8 +156,6 @@ class FeatureVisualization:
         if composite:
             composite.remove()
         fv_composite.remove()
-
-        pbar.close()
 
         return self.saved_checkpoints
 
@@ -206,29 +203,6 @@ class FeatureVisualization:
         saved_files["a_stats"] = self.ActStats.collect_results(checkpoints["a_stats"], d_index)
 
         return saved_files
-
-    def get_data_concurrently(self, indices: Union[List, np.ndarray, torch.tensor], preprocessing=False):
-
-        if len(indices) == 1:
-            data, label = self.get_data_sample(indices[0], preprocessing)
-            return data, label
-
-        threads = []
-        data_returned = []
-        labels_returned = []
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            for index in indices:
-                future = executor.submit(self.get_data_sample, index, preprocessing)
-                threads.append(future)
-
-        for t in threads:
-            single_data = t.result()[0]
-            single_label = t.result()[1]
-            data_returned.append(single_data)
-            labels_returned.append(single_label)
-
-        data_returned = torch.cat(data_returned, dim=0)
-        return data_returned, labels_returned
 
 
     def cache_reference(func):
@@ -292,7 +266,7 @@ class FeatureVisualization:
     @cache_reference
     def get_max_reference(
             self, concept_ids: Union[int,list], layer_name: str, mode="relevance", r_range: Tuple[int, int] = (0, 8), composite: Composite=None,
-            rf=False, plot_fn=vis_img_heatmap, batch_size=32)-> Dict:
+            rf=False, plot_fn=vis_img_heatmap, batch_size=32, custom_collate_fn=None)-> Dict:
         """
         Retreive reference samples for a list of concepts in a layer. Relevance and Activation Maximization
         are availble if FeatureVisualization was computed for the mode. In addition, conditional heatmaps can be computed on reference samples.
@@ -320,6 +294,9 @@ class FeatureVisualization:
             If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
+        custom_collate_fn: callable function
+            If set, the function is used to collate the data. The function should have the signature (batch: list) and return the 
+            preprocessed data and targets. If None, the default collate function is used.
 
         Returns:
         -------
@@ -346,13 +323,13 @@ class FeatureVisualization:
             d_indices = d_c_sorted[r_range[0]:r_range[1], c_id]
             n_indices = rf_c_sorted[r_range[0]:r_range[1], c_id]
 
-            ref_c[c_id] = self._load_ref_and_attribution(d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size)
+            ref_c[c_id] = self._load_ref_and_attribution(d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size, custom_collate_fn)
 
         return ref_c
 
     @cache_reference
     def get_stats_reference(self, concept_id: int, layer_name: str, targets: Union[int, list], mode="relevance", r_range: Tuple[int, int] = (0, 8),
-            composite=None, rf=False, plot_fn=vis_img_heatmap, batch_size=32):
+            composite=None, rf=False, plot_fn=vis_img_heatmap, batch_size=32, custom_collate_fn=None):
         """
         Retreive reference samples for a single concept in a layer wrt. different explanation targets i.e. returns the reference samples
         that are computed by self.compute_stats. Relevance and Activation are availble if FeatureVisualization was computed for the statitics mode. 
@@ -381,6 +358,9 @@ class FeatureVisualization:
             If None, the raw tensors are returned.
         batch_size: int
             If heatmap is True, describes maximal batch size of samples to compute for conditional heatmaps.
+        custom_collate_fn: callable function
+            If set, the function is used to collate the data. The function should have the signature (batch: list) and return the 
+            preprocessed data and targets. If None, the default collate function is used.
 
         Returns:
         -------
@@ -409,15 +389,29 @@ class FeatureVisualization:
             d_indices = d_c_sorted[r_range[0]:r_range[1], concept_id]
             n_indices = rf_c_sorted[r_range[0]:r_range[1], concept_id]
 
-            ref_t[f"{concept_id}:{t}"] = self._load_ref_and_attribution(d_indices, concept_id, n_indices, layer_name, composite, rf, plot_fn, batch_size)
+            ref_t[f"{concept_id}:{t}"] = self._load_ref_and_attribution(d_indices, concept_id, n_indices, layer_name, composite, rf, plot_fn, batch_size, custom_collate_fn)
 
         return ref_t
 
-    def _load_ref_and_attribution(self, d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size):
+    def _load_ref_and_attribution(self, d_indices, c_id, n_indices, layer_name, composite, rf, plot_fn, batch_size, custom_collate_fn):
 
-        data_batch, _ = self.get_data_concurrently(d_indices, preprocessing=False)
+        if custom_collate_fn is None:
+            collate_fn = lambda batch: self.collate_fn(batch, preprocessing=False)
+        else:
+            collate_fn = custom_collate_fn
+        loader = DynamicLoader(
+            self.dataset, 
+            sampler=self.sampler, 
+            batch_size=batch_size, 
+            collate_fn=collate_fn,
+            num_workers=4,
+        )
+        with loader[d_indices] as iterator:
+            data_batch_list, _ = zip(*iterator)
+            
 
         if composite:
+            data_batch = torch.cat(data_batch_list, dim=0)
             data_p = self.preprocess_data(data_batch)
             heatmaps = self._attribution_on_reference(data_p, c_id, layer_name, composite, rf, n_indices, batch_size)
 
@@ -427,7 +421,7 @@ class FeatureVisualization:
                 return data_batch.detach().cpu(), heatmaps.detach().cpu()
 
         else:
-            return data_batch.detach().cpu()
+            return data_batch_list
 
     def _attribution_on_reference(self, data, concept_id: int, layer_name: str, composite, rf=False, neuron_ids: list=[], batch_size=32):
 
