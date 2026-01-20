@@ -110,7 +110,7 @@ from zennit.composites import EpsilonPlusFlat
 from zennit.canonizers import SequentialMergeBatchNorm
 
 # define LRP rules and canonizers in zennit
-composite = EpsilonPlusFlat([SequentialMergeBatchNorm()])
+composite = EpsilonPlusFlat(canonizers=[SequentialMergeBatchNorm()])
 
 # load CRP toolbox
 attribution = CondAttribution(model)
